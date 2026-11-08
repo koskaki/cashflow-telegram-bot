@@ -12,6 +12,11 @@ Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keua
 
 ---
 
+### Sumber pembuatan
+1. Youtube
+2. Repositori Orang
+3. AI (Gemini dan Claude)
+
 ## 🚀 Panduan Instalasi
 
 ### 1. Persiapan Akun & API Key
@@ -55,8 +60,3 @@ Buka browser dan akses tautan berikut (ganti `<TOKEN_BOT>` dan `<URL_WEB_APP>`):
 ```text
 [https://api.telegram.org/bot](https://api.telegram.org/bot)<TOKEN_BOT>/setWebhook?url=<URL_WEB_APP>
 
-
-### 6. Sumber pembuata
-1. Youtube
-2. Repositori Orang
-3. AI (Gemini dan Claude)
