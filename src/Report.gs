@@ -2,7 +2,21 @@
 // KALKULASI & PENYUSUNAN LAPORAN LENGKAP
 // ==========================================
 
+function padRight_(str, len) {
+  str = String(str || "");
+  while (str.length < len) str += " ";
+  return str.substring(0, len);
+}
+
+function padLeft_(str, len) {
+  str = String(str || "");
+  while (str.length < len) str = " " + str;
+  return str;
+}
+
+
 // Ganti fungsi routerRingkasanDanDetail_ dengan yang ini:
+
 function routerRingkasanDanDetail_(msgText, caller, isDetail) {
   var parts = msgText.split(" ").filter(Boolean);
   var arg = (parts[1] || "").toLowerCase();
@@ -157,12 +171,14 @@ function generateLaporanSemua_(caller, isDetail, isGlobal) {
   return formatOutputLaporan_("KESELURUHAN (TOTAL SEMUA)", caller, rows, isDetail, isGlobal);
 }
 
-// Format Tampilan Output (Ringkasan vs Detail)
+// Format Tampilan Output (Lengkap: Mutasi Periode + Saldo Real-Time Semua Dompet)
 function formatOutputLaporan_(judulPeriode, caller, rows, isDetail, isGlobal) {
   var totalMasuk = 0, totalKeluar = 0;
   var perDompet = {};
   var listDetail = [];
+  var garis = "──────────────────────────────";
 
+  // 1. Hitung mutasi pada periode yang dipilih
   rows.forEach(function(r) {
     var dNama = normalizeDompet_(r.dompet);
 
@@ -174,33 +190,94 @@ function formatOutputLaporan_(judulPeriode, caller, rows, isDetail, isGlobal) {
     else perDompet[dNama].keluar += r.nominal;
 
     if (isDetail) {
-      var icon = r.jenis === "masuk" ? "📥" : "📤";
-      var ket = r.detail && r.detail !== "-" ? " (" + r.detail + ")" : "";
-      var kat = r.kategori && r.kategori !== "-" ? " [" + r.kategori + "]" : "";
-      var tagUser = isGlobal ? " - <i>" + (r.nama || "User") + "</i>" : "";
-      listDetail.push(icon + " " + r.tanggalRaw + " • <b>" + dNama + "</b>" + kat + ": Rp " + r.nominal.toLocaleString('id-ID') + ket + tagUser);
+      var tglShort = r.tanggalRaw ? r.tanggalRaw.substring(0, 5) : "";
+      var isMasuk = (r.jenis === "masuk");
+      var dot = isMasuk ? "🟢" : "🔴";
+      var judulItem = (r.detail && r.detail !== "-") ? r.detail : (r.kategori || "Transaksi");
+      if (judulItem.length > 20) judulItem = judulItem.substring(0, 18) + "..";
+
+      var nomStr = "Rp " + Number(r.nominal).toLocaleString('id-ID');
+      var tagUser = isGlobal ? " • " + (r.nama || "User") : "";
+
+      listDetail.push(dot + " <b>" + judulItem + "</b>: " + nomStr + "\n" +
+                      "   <i>" + tglShort + " • " + dNama + " • " + (r.kategori || "Umum") + tagUser + "</i>");
     }
   });
 
-  var scope = isGlobal ? "🌐 PENGGUNA: <b>Seluruh Pengguna</b>" : "👤 AKUN: <b>" + caller.Nama + "</b>";
-  var header = (isDetail ? "📝 <b>DETAIL TRANSAKSI " : "📊 <b>RINGKASAN ") + judulPeriode + "</b>\n" + scope + "\n--------------------------------\n";
-
-  var body = "";
-  if (isDetail) {
-    body = listDetail.join("\n") + "\n--------------------------------\n";
-  } else {
-    body = "💼 <b>TOTAL PER DOMPET:</b>\n";
-    Object.keys(perDompet).sort().forEach(function(d) {
-      body += "• " + d + " ➔ 📥 Rp " + perDompet[d].masuk.toLocaleString('id-ID') + " | 📤 Rp " + perDompet[d].keluar.toLocaleString('id-ID') + "\n";
-    });
-    body += "--------------------------------\n";
+  // 2. Hitung Sisa Saldo Nyata (Real-time) Seluruh Transaksi dari Awal
+  var allRows = getDashboardRows_();
+  if (!isGlobal) {
+    allRows = allRows.filter(function(r) { return String(r.chatId) === String(caller.ChatID); });
   }
 
-  var footer = "📥 <b>Total Masuk:</b> Rp " + totalMasuk.toLocaleString('id-ID') + "\n" +
-               "📤 <b>Total Keluar:</b> Rp " + totalKeluar.toLocaleString('id-ID') + "\n" +
-               "🧮 <b>Net:</b> Rp " + (totalMasuk - totalKeluar).toLocaleString('id-ID');
+  var saldoRealtimePerDompet = {};
+  var totalSaldoSemuaDompet = 0;
 
-  return header + body + footer;
+  allRows.forEach(function(r) {
+    var dNama = normalizeDompet_(r.dompet);
+    if (!saldoRealtimePerDompet[dNama]) saldoRealtimePerDompet[dNama] = 0;
+    if (r.jenis === "masuk") {
+      saldoRealtimePerDompet[dNama] += r.nominal;
+      totalSaldoSemuaDompet += r.nominal;
+    } else if (r.jenis === "keluar") {
+      saldoRealtimePerDompet[dNama] -= r.nominal;
+      totalSaldoSemuaDompet -= r.nominal;
+    }
+  });
+
+  // Header Laporan
+  var namaDisplay = (caller.Nama && caller.Nama.trim() !== ".") ? caller.Nama : (caller.Username ? "@" + caller.Username : "User");
+  var scope = isGlobal ? "🌐 Pengguna: <b>Seluruh Pengguna</b>" : "👤 Akun: <b>" + namaDisplay + "</b>";
+  var header = (isDetail ? "📝 <b>DETAIL " : "📊 <b>RINGKASAN ") + judulPeriode + "</b>\n" + scope + "\n" + garis + "\n";
+
+  // Body Laporan
+  var body = "";
+  if (isDetail) {
+    body = listDetail.join("\n\n") + "\n" + garis + "\n";
+  } else {
+    // Tabel Arus Periode Tersebut
+    body = "<pre>";
+    body += padRight_("DOMPET", 7) + padLeft_("IN / OUT", 11) + padLeft_("SELISIH", 12) + "\n";
+    body += garis + "\n";
+
+    var keys = Object.keys(perDompet).sort();
+    keys.forEach(function(d, idx) {
+      var inNom = perDompet[d].masuk || 0;
+      var outNom = perDompet[d].keluar || 0;
+      var selisihPeriode = inNom - outNom;
+
+      var inStr = "+" + Number(inNom).toLocaleString('id-ID');
+      var outStr = "-" + Number(outNom).toLocaleString('id-ID');
+      var selisihStr = Number(selisihPeriode).toLocaleString('id-ID');
+
+      body += padRight_(d, 7) + padLeft_(inStr, 11) + padLeft_(selisihStr, 12) + "\n";
+      body += padRight_("", 7) + padLeft_(outStr, 11) + padLeft_("", 12) + "\n";
+
+      if (idx < keys.length - 1) body += "\n";
+    });
+
+    body += garis + "\n";
+    body += "</pre>\n";
+  }
+
+  // Ringkasan Periode
+  var selisihTotal = totalMasuk - totalKeluar;
+  var footerPeriode = "📥 <b>Total Masuk  :</b> Rp " + Number(totalMasuk).toLocaleString('id-ID') + "\n" +
+                      "📤 <b>Total Keluar :</b> Rp " + Number(totalKeluar).toLocaleString('id-ID') + "\n" +
+                      "⚖️ <b>Arus Kas Net :</b> <b>Rp " + Number(selisihTotal).toLocaleString('id-ID') + "</b>\n" +
+                      garis + "\n";
+
+  // Rincian Saldo Nyata (Real-time) Sekarang
+  var footerSaldoNyata = "💼 <b>SISA SALDO DOMPET SEKARANG:</b>\n<pre>";
+  Object.keys(saldoRealtimePerDompet).sort().forEach(function(d) {
+    var sNom = Number(saldoRealtimePerDompet[d]).toLocaleString('id-ID');
+    footerSaldoNyata += padRight_(d, 12) + ": Rp " + padLeft_(sNom, 13) + "\n";
+  });
+  footerSaldoNyata += garis + "\n";
+  footerSaldoNyata += padRight_("TOTAL SALDO", 12) + ": Rp " + padLeft_(Number(totalSaldoSemuaDompet).toLocaleString('id-ID'), 13) + "\n";
+  footerSaldoNyata += "</pre>";
+
+  return header + body + footerPeriode + footerSaldoNyata;
 }
 
 function parseTanggalDDMMYYYY_(str) {
@@ -306,11 +383,16 @@ function handleLaporanKhusus_(msgText, caller, isDetail) {
     if (r.jenis === "masuk") perDompet[dNama].masuk += r.nominal;
     else perDompet[dNama].keluar += r.nominal;
 
-    if (isDetail) {
-      var icon = r.jenis === "masuk" ? "📥" : "📤";
-      var ket = r.detail && r.detail !== "-" ? " (" + r.detail + ")" : "";
-      var kat = r.kategori && r.kategori !== "-" ? " [" + r.kategori + "]" : "";
-      listDetail.push(icon + " " + r.tanggalRaw + " • <b>" + dNama + "</b>" + kat + ": Rp " + r.nominal.toLocaleString('id-ID') + ket);
+   if (isDetail) {
+      var tglShort = r.tanggalRaw ? r.tanggalRaw.substring(0, 5) : "";
+      var isMasuk = (r.jenis === "masuk");
+      var dot = isMasuk ? "🟢" : "🔴";
+      var judulItem = (r.detail && r.detail !== "-") ? r.detail : (r.kategori || "Transaksi");
+      if (judulItem.length > 20) judulItem = judulItem.substring(0, 18) + "..";
+
+      var nomStr = "Rp " + Number(r.nominal).toLocaleString('id-ID');
+      listDetail.push(dot + " <b>" + judulItem + "</b>: " + nomStr + "\n" +
+                      "   <i>" + tglShort + " • " + dNama + " • " + (r.kategori || "Umum") + "</i>");
     }
   });
 
@@ -321,18 +403,39 @@ function handleLaporanKhusus_(msgText, caller, isDetail) {
 
   var body = "";
   if (isDetail) {
-    body = listDetail.join("\n") + "\n--------------------------------\n";
+    body = listDetail.join("\n") + "\n\n";
   } else {
-    body = "💼 <b>TOTAL PER DOMPET:</b>\n";
-    Object.keys(perDompet).sort().forEach(function(d) {
-      body += "• " + d + " ➔ 📥 Rp " + perDompet[d].masuk.toLocaleString('id-ID') + " | 📤 Rp " + perDompet[d].keluar.toLocaleString('id-ID') + "\n";
+    var garis = "──────────────────────────────";
+    body = "<pre>";
+    body += padRight_("DOMPET", 7) + padLeft_("IN / OUT", 11) + padLeft_("SISA", 12) + "\n";
+    body += garis + "\n";
+
+    var keysKhusus = Object.keys(perDompet).sort();
+    keysKhusus.forEach(function(d, idx) {
+      var inNom = perDompet[d].masuk || 0;
+      var outNom = perDompet[d].keluar || 0;
+      var sisaDompet = inNom - outNom;
+
+      var inStr = "+" + Number(inNom).toLocaleString('id-ID');
+      var outStr = "-" + Number(outNom).toLocaleString('id-ID');
+      var sisaStr = Number(sisaDompet).toLocaleString('id-ID');
+
+      body += padRight_(d, 7) + padLeft_(inStr, 11) + padLeft_(sisaStr, 12) + "\n";
+      body += padRight_("", 7) + padLeft_(outStr, 11) + padLeft_("", 12) + "\n";
+
+      if (idx < keysKhusus.length - 1) {
+        body += "\n";
+      }
     });
-    body += "--------------------------------\n";
+
+    body += garis + "\n";
+    body += "</pre>\n";
   }
 
-  var footer = "📥 <b>Total Masuk:</b> Rp " + totalMasuk.toLocaleString('id-ID') + "\n" +
-               "📤 <b>Total Keluar:</b> Rp " + totalKeluar.toLocaleString('id-ID') + "\n" +
-               "🧮 <b>Net:</b> Rp " + (totalMasuk - totalKeluar).toLocaleString('id-ID');
+  var sisaKhusus = totalMasuk - totalKeluar;
+  var footer = "📥 <b>Total Masuk  :</b> Rp " + Number(totalMasuk).toLocaleString('id-ID') + "\n" +
+               "📤 <b>Total Keluar :</b> Rp " + Number(totalKeluar).toLocaleString('id-ID') + "\n" +
+               "💰 <b>Sisa Bersih  :</b> <b>Rp " + Number(sisaKhusus).toLocaleString('id-ID') + "</b>";
 
   return header + body + footer;
 }

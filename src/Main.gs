@@ -19,12 +19,14 @@ function doPost(e) {
 
       ensureSheets_();
       var userCb = resolveUser_(chatId, telegramUsername, namaTelegram);
+      
+      // Validasi ketat: User wajib terdaftar aktif di sheet Users
       if (!userCb) {
-        sendMessage(chatId, "❌ Akses ditolak. Akun belum terdaftar.");
+        sendMessage(chatId, "⛔ <b>Akses Ditolak!</b>\nAkunmu belum terdaftar atau telah dinonaktifkan. Ketik <code>/daftar</code> untuk meminta persetujuan admin.");
         return;
       }
 
-      // Tombol Laporan
+      // --- TOMBOL LAPORAN RINGKASAN & DETAIL ---
       if (callbackData === "btn_ringkasan_hariini") {
         sendMessage(chatId, routerRingkasanDanDetail_("/ringkasan hariini", userCb, false));
         return;
@@ -49,15 +51,283 @@ function doPost(e) {
       } else if (callbackData === "btn_cara_input") {
         sendCaraInput(chatId);
         return;
-      } else if (callbackData === "btn_users_list") {
-        sendMessage(chatId, handleListUsers_(userCb));
+      } // Tombol Buka Panel Pengguna
+      if (callbackData === "btn_users_list") {
+        var panelRes = handleListUsers_(userCb);
+        if (typeof panelRes === "object" && panelRes.keyboard) {
+          sendMessageWithKeyboard(chatId, panelRes.pesan, panelRes.keyboard);
+        } else {
+          sendMessage(chatId, panelRes);
+        }
         return;
       }
 
-      // LANGKAH 1: User memilih Jenis (Keluar / Masuk) -> Tampilkan Pilihan Dompet
+      // LANGKAH 1: Superadmin Memilih Salah Satu Pengguna
+      if (callbackData.indexOf("mg_usr_") === 0) {
+        if (userCb.Role !== "admin" && userCb.Role !== "superadmin") {
+          sendMessage(chatId, "❌ Akses ditolak.");
+          return;
+        }
+
+        var targetChatId = callbackData.split("_")[2];
+        var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+        var sheetU = ss.getSheetByName("Users");
+        var valU = sheetU.getDataRange().getValues();
+        var targetRowData = null;
+
+        for (var rIdx = 1; rIdx < valU.length; rIdx++) {
+          if (String(valU[rIdx][1]).trim() === targetChatId) {
+            targetRowData = valU[rIdx];
+            break;
+          }
+        }
+
+        if (!targetRowData) {
+          sendMessage(chatId, "⚠️ Pengguna tidak ditemukan di database.");
+          return;
+        }
+
+        var tUname = String(targetRowData[0] || "").replace(/^@+/, "");
+        var tDName = String(targetRowData[2] || "-");
+        var tRole = String(targetRowData[3] || "user");
+
+        var textPilihan = "⚙️ <b>KELOLA PENGGUNA:</b>\n\n" +
+          "• <b>Nama:</b> " + tDName + "\n" +
+          "• <b>Username:</b> " + (tUname ? "@" + tUname : "-") + "\n" +
+          "• <b>Chat ID:</b> <code>" + targetChatId + "</code>\n" +
+          "• <b>Role Saat Ini:</b> <b>" + tRole + "</b>\n\n" +
+          "Pilih tindakan:";
+
+        var kbTindakan = [
+          [
+            { text: "👤 Set sbg User", callback_data: "setr_" + targetChatId + "_user" }
+          ]
+        ];
+
+        // Hanya Superadmin yang boleh menaikkan/menurunkan Admin & Superadmin
+        if (userCb.Role === "superadmin") {
+          kbTindakan.push([
+            { text: "🛡️ Set sbg Admin", callback_data: "setr_" + targetChatId + "_admin" },
+            { text: "👑 Set sbg Superadmin", callback_data: "setr_" + targetChatId + "_superadmin" }
+          ]);
+          kbTindakan.push([
+            { text: "🗑️ Hapus Pengguna Ini", callback_data: "delu_confirm_" + targetChatId }
+          ]);
+        }
+
+        kbTindakan.push([{ text: "🔙 Kembali ke Daftar", callback_data: "btn_users_list" }]);
+
+        sendMessageWithKeyboard(chatId, textPilihan, kbTindakan);
+        return;
+      }
+
+      // LANGKAH 2: Eksekusi Perubahan Role via Tombol
+      if (callbackData.indexOf("setr_") === 0) {
+        if (userCb.Role !== "admin" && userCb.Role !== "superadmin") {
+          sendMessage(chatId, "❌ Akses ditolak.");
+          return;
+        }
+
+        var sParts = callbackData.split("_");
+        var tCId = sParts[1];
+        var roleBaru = sParts[2];
+
+        if (userCb.Role === "admin" && (roleBaru === "admin" || roleBaru === "superadmin")) {
+          sendMessage(chatId, "❌ Admin biasa tidak bisa mengangkat admin lain.");
+          return;
+        }
+
+        var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+        var sheetU = ss.getSheetByName("Users");
+        var valU = sheetU.getDataRange().getValues();
+
+        for (var r = 1; r < valU.length; r++) {
+          if (String(valU[r][1]).trim() === tCId) {
+            sheetU.getRange(r + 1, 4).setValue(roleBaru);
+            sendMessage(chatId, "✅ Role untuk ID <code>" + tCId + "</code> berhasil diubah menjadi <b>" + roleBaru + "</b>.");
+            try {
+              sendMessage(tCId, "ℹ️ Role akunmu telah diubah menjadi <b>" + roleBaru + "</b> oleh pengelola.");
+            } catch (e) {}
+            return;
+          }
+        }
+        sendMessage(chatId, "⚠️ Gagal menemukan data akun.");
+        return;
+      }
+
+      // LANGKAH 3: Eksekusi Hapus User via Tombol
+      if (callbackData.indexOf("delu_confirm_") === 0) {
+        if (userCb.Role !== "superadmin") {
+          sendMessage(chatId, "❌ Hanya Superadmin yang berhak menghapus pengguna.");
+          return;
+        }
+
+        var delCId = callbackData.split("_")[2];
+        if (String(delCId) === String(chatId)) {
+          sendMessage(chatId, "⚠️ Kamu tidak bisa menghapus akunmu sendiri.");
+          return;
+        }
+
+        var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+        var sheetU = ss.getSheetByName("Users");
+        var valU = sheetU.getDataRange().getValues();
+
+        for (var r = 1; r < valU.length; r++) {
+          if (String(valU[r][1]).trim() === delCId) {
+            sheetU.deleteRow(r + 1);
+            sendMessage(chatId, "🗑️ Pengguna dengan ID <code>" + delCId + "</code> berhasil dihapus dari sistem.");
+            try {
+              sendMessage(delCId, "⚠️ Akses akunmu ke bot ini telah dinonaktifkan oleh Superadmin.");
+            } catch (e) {}
+            return;
+          }
+        }
+        sendMessage(chatId, "⚠️ Akun tidak ditemukan.");
+        return;
+      }
+
+      // --- TOMBOL EVALUASI KEUANGAN AI ---
+      if (callbackData === "btn_eval_kemarin") {
+        sendMessage(chatId, "⏳ <i>Meri sedang menganalisis keuangan kemarin...</i>");
+        var rekap = getRekapPeriodeEvaluasi_(chatId, "kemarin");
+        var pesan = generateAnalisisKeuanganGemini_(rekap, userCb.Nama);
+        sendMessage(chatId, "💡 <b>EVALUASI KEUANGAN: KEMARIN</b>\n\n" + pesan);
+        return;
+      } else if (callbackData === "btn_eval_minggulalu") {
+        sendMessage(chatId, "⏳ <i>Meri sedang menganalisis keuangan minggu lalu...</i>");
+        var rekap = getRekapPeriodeEvaluasi_(chatId, "minggulalu");
+        var pesan = generateAnalisisKeuanganGemini_(rekap, userCb.Nama);
+        sendMessage(chatId, "💡 <b>EVALUASI KEUANGAN: MINGGU LALU</b>\n\n" + pesan);
+        return;
+      } else if (callbackData === "btn_eval_bulanlalu" || callbackData === "btn_evaluasi_ai") {
+        sendMessage(chatId, "⏳ <i>Meri sedang menganalisis keuangan bulan lalu...</i>");
+        var rekap = getRekapPeriodeEvaluasi_(chatId, "bulanlalu");
+        var pesan = generateAnalisisKeuanganGemini_(rekap, userCb.Nama);
+        sendMessage(chatId, "💡 <b>EVALUASI KEUANGAN: BULAN LALU</b>\n\n" + pesan);
+        return;
+      } else if (callbackData === "btn_ekspor_file") {
+        sendMessage(chatId, "⏳ <i>Sedang menyiapkan rekapan transaksi keuanganmu...</i>");
+        kirimFileExcelUser_(chatId, userCb.Nama);
+        return;
+      }
+
+      // --- TOMBOL PERSETUJUAN PENDAFTARAN USER BARU ---
+      // Langkah 1: Admin menekan tombol "Setujui" -> Tampilkan pilihan role
+      if (callbackData.indexOf("appr_step1_") === 0) {
+        if (userCb.Role !== "admin" && userCb.Role !== "superadmin") {
+          sendMessage(chatId, "❌ Akses ditolak. Hanya admin yang berhak memproses pendaftaran.");
+          return;
+        }
+
+        var p = callbackData.split("_");
+        var targetCId = p[2];
+        var targetUser = p[3];
+        var targetName = p[4];
+
+        var roleKeyboard = [
+          [
+            { text: "👤 User Biasa", callback_data: "appr_role_user_" + targetCId + "_" + targetUser + "_" + targetName }
+          ]
+        ];
+
+        if (userCb.Role === "superadmin") {
+          roleKeyboard.push([
+            { text: "🛡️ Admin", callback_data: "appr_role_admin_" + targetCId + "_" + targetUser + "_" + targetName },
+            { text: "👑 Superadmin", callback_data: "appr_role_superadmin_" + targetCId + "_" + targetUser + "_" + targetName }
+          ]);
+        }
+
+        roleKeyboard.push([{ text: "🔙 Batalkan", callback_data: "cancel_appr" }]);
+
+        var decName = decodeURIComponent(targetName);
+        sendMessageWithKeyboard(chatId, "Pilih role untuk <b>" + decName + "</b> (ID: <code>" + targetCId + "</code>):", roleKeyboard);
+        return;
+      }
+
+     // Langkah 2: Admin memilih role -> Simpan ke sheet Users
+      if (callbackData.indexOf("appr_role_") === 0) {
+        if (userCb.Role !== "admin" && userCb.Role !== "superadmin") {
+          sendMessage(chatId, "❌ Akses ditolak.");
+          return;
+        }
+
+        var rParts = callbackData.split("_");
+        var roleDipilih = rParts[2];
+        var targetCId = rParts[3];
+        // SIMPAN TANPA @
+        var rawUname = decodeURIComponent(rParts[4] || "");
+        var targetUser = (rawUname && rawUname !== "-") ? rawUname.replace(/^@+/, "").trim() : "-";
+        var targetName = decodeURIComponent(rParts[5] || "User");
+
+        var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+        var sheetUsers = ss.getSheetByName("Users");
+        var dataU = sheetUsers.getDataRange().getValues();
+        var updated = false;
+
+        // 1. Cek jika ID sudah ada untuk update
+        for (var idx = 1; idx < dataU.length; idx++) {
+          if (String(dataU[idx][1]).trim() === String(targetCId)) {
+            sheetUsers.getRange(idx + 1, 1).setValue(targetUser);
+            sheetUsers.getRange(idx + 1, 3).setValue(targetName);
+            sheetUsers.getRange(idx + 1, 4).setValue(roleDipilih);
+            updated = true;
+            break;
+          }
+        }
+
+        // 2. Jika akun baru, cari baris kosong pertama untuk mengisi celah
+        if (!updated) {
+          var tglAppr = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+          var targetRow = -1;
+
+          for (var r = 1; r < dataU.length; r++) {
+            // Baris dianggap kosong jika kolom Username (A) dan ChatId (B) kosong
+            if (!String(dataU[r][0]).trim() && !String(dataU[r][1]).trim()) {
+              targetRow = r + 1; // 1-indexed
+              break;
+            }
+          }
+
+          var newRowData = [targetUser, "'" + targetCId, targetName, roleDipilih, tglAppr];
+
+          if (targetRow !== -1) {
+            sheetUsers.getRange(targetRow, 1, 1, newRowData.length).setValues([newRowData]);
+          } else {
+            sheetUsers.appendRow(newRowData);
+          }
+        }
+
+        sendMessage(chatId, "✅ <b>Pendaftaran Berhasil!</b>\n" +
+          "• Nama: <b>" + targetName + "</b>\n" +
+          "• Role: <b>" + roleDipilih + "</b>\n" +
+          "• Chat ID: <code>" + targetCId + "</code>");
+
+        try {
+          sendMessage(targetCId, "🎉 <b>Selamat!</b> Akunmu telah disetujui sebagai <b>" + roleDipilih + "</b>.\nSilakan ketik /menu untuk mulai.");
+        } catch (err) {}
+        return;
+      }
+
+      // Tombol Tolak Pendaftaran
+      if (callbackData.indexOf("reject_reg_") === 0) {
+        var rejectId = callbackData.split("_")[2];
+        sendMessage(chatId, "❌ Pendaftaran akun ID <code>" + rejectId + "</code> telah ditolak.");
+        try {
+          sendMessage(rejectId, "Mohon maaf, permohonan pendaftaran akunmu belum disetujui oleh admin.");
+        } catch (err) {}
+        return;
+      }
+
+      if (callbackData === "cancel_appr") {
+        sendMessage(chatId, "Proses persetujuan pendaftaran dibatalkan.");
+        return;
+      }
+
+      // --- ALUR SIMPAN TRANSAKSI STRUK ---
+      // Langkah 1: User memilih Jenis -> Tampilkan pilihan Dompet
       if (callbackData.indexOf("confirm_struk_") === 0) {
         var partsCb = callbackData.split("_");
-        var jenis = partsCb[2]; // Keluar atau Masuk
+        var jenis = partsCb[2];
         var uang = partsCb[3];
         var kat = partsCb[4] || "Umum";
         var det = partsCb[5] || "-";
@@ -66,7 +336,6 @@ function doPost(e) {
         var keyboardDompet = [];
         var rowTemp = [];
 
-        // Susun tombol dompet (2 tombol per baris)
         daftarDompet.forEach(function(dmp, idx) {
           rowTemp.push({
             text: "💳 " + dmp,
@@ -90,7 +359,7 @@ function doPost(e) {
         return;
       }
 
-      // LANGKAH 2: User memilih Dompet -> Simpan ke Google Sheets
+      // Langkah 2: User memilih Dompet -> Simpan transaksi
       if (callbackData.indexOf("save_struk_") === 0) {
         var pSave = callbackData.split("_");
         var jenisFinal = pSave[2];
@@ -98,24 +367,34 @@ function doPost(e) {
         var uangFinal = pSave[4];
         var katFinal = decodeURIComponent(pSave[5] || "Umum");
         var detFinal = decodeURIComponent(pSave[6] || "-");
-
         var tglSlash = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
         var newId = simpanBaris_(tglSlash, jenisFinal, dompetFinal, uangFinal, katFinal, detFinal, chatId, telegramUsername, userCb.Nama);
 
-        sendMessage(chatId, "✅ <b>Transaksi dari Struk Berhasil Dicatat!</b>\n" +
+        var pesanStrukSukses = "✅ <b>Transaksi dari Struk Berhasil Dicatat!</b>\n\n" +
           "• <b>Jenis:</b> " + jenisFinal + "\n" +
           "• <b>Nominal:</b> Rp " + Number(uangFinal).toLocaleString('id-ID') + "\n" +
           "• <b>Dompet:</b> " + dompetFinal + "\n" +
           "• <b>Kategori:</b> " + katFinal + "\n" +
           "• <b>Detail:</b> " + detFinal + "\n" +
-          "🆔 ID: <code>" + newId + "</code>");
+          "🆔 ID: <code>" + newId + "</code>\n\n" +
+          "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + newId + " " + jenisFinal + " " + uangFinal + " " + dompetFinal + " " + katFinal + " " + detFinal + "</code>";
+
+        var kbHapusStruk = [
+          [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + newId }]
+        ];
+
+        sendMessageWithKeyboard(chatId, pesanStrukSukses, kbHapusStruk);
         return;
       }
 
-      if (callbackData === "cancel_struk") {
-        sendMessage(chatId, "❌ Pencatatan struk dibatalkan.");
+      // Tombol Cepat Hapus Transaksi Sekali Klik
+      if (callbackData.indexOf("deltx_") === 0) {
+        var idHapus = callbackData.split("_")[1];
+        var hasilHapus = handleHapusTransaksi_("/hapus " + idHapus, userCb);
+        sendMessage(chatId, hasilHapus);
         return;
       }
+
       return;
     }
 
@@ -143,7 +422,7 @@ function doPost(e) {
         var cmdInit = msgInit.split(" ")[0];
         if (cmdInit === "/daftar" || cmdInit === "/start") {
           notifikasiPendaftaranToAdmin_(chatId, telegramUsername, namaTelegram);
-          sendMessage(chatId, 
+          sendMessage(chatId,
             "⏳ <b>Permohonan Pendaftaran Terkirim!</b>\n\n" +
             "Notifikasi telah dikirim ke Admin. Harap tunggu persetujuan." +
             (telegramUsername ? "" : "\n\n⚠️ <b>Tips:</b> Pasang Username di akun Telegrammu.")
@@ -164,7 +443,7 @@ function doPost(e) {
 
       var photos = update.message.photo;
       var fileId = photos[photos.length - 1].file_id;
-      
+
       var imageBlob = getTelegramImageBlob_(fileId);
       if (!imageBlob) {
         sendMessage(chatId, "⚠️ Gagal mengunduh foto dari server Telegram.");
@@ -206,12 +485,25 @@ function doPost(e) {
     // ==========================================
     if (!update.message.text) return;
     var msgText = update.message.text.trim();
-    var cmd = msgText.split(" ")[0].toLowerCase().split("@")[0];
+    var lowerMsg = msgText.toLowerCase();
+    var cmd = lowerMsg.split(" ")[0].split("@")[0];
+
+    // Deteksi sapaan santai
+    var sapaanKeywords = ["halo", "hai", "hei", "pagi", "siang", "malam", "assalamualaikum", "ping", "p", "test", "tes"];
+    if (sapaanKeywords.indexOf(lowerMsg) !== -1) {
+      sendMessage(chatId, responSapaan_(user.Nama));
+      return;
+    }
+
+    if (lowerMsg.indexOf("makasih") !== -1 || lowerMsg.indexOf("terima kasih") !== -1 || lowerMsg.indexOf("thanks") !== -1) {
+      sendMessage(chatId, "Sama-sama! Senang bisa bantu keuanganmu tetap tercatat rapi hari ini ✨");
+      return;
+    }
 
     // Command Routing Bantuan & Registrasi
     if (cmd === "/start" || cmd === "/menu") { sendMenuUtama(chatId, user); return; }
     if (cmd === "/cara_input") { sendCaraInput(chatId); return; }
-    if (cmd === "/daftar") { sendMessage(chatId, "✅ Kamu sudah terdaftar sebagai <b>" + user.Role + "</b>."); return; }
+    if (cmd === "/daftar") { sendMessage(chatId, "Akunmu sudah aktif terdaftar sebagai <b>" + user.Role + "</b> kok. Siap dipakai!"); return; }
 
     // Routing RINGKASAN
     if (cmd === "/ringkasan") {
@@ -228,6 +520,26 @@ function doPost(e) {
     }
     if (cmd === "/ringkasanbulanini" || cmd === "/bulanini") {
       sendMessage(chatId, routerRingkasanDanDetail_("/ringkasan bulanini", user, false));
+      return;
+    }
+
+    // Routing Perintah Evaluasi Teks
+    if (cmd === "/evaluasikemarin" || msgText.toLowerCase() === "/evaluasi kemarin") {
+      sendMessage(chatId, "⏳ <i>Meri sedang menganalisis pengeluaran kemarin...</i>");
+      var rk = getRekapPeriodeEvaluasi_(chatId, "kemarin");
+      sendMessage(chatId, "💡 <b>EVALUASI KEUANGAN: KEMARIN</b>\n\n" + generateAnalisisKeuanganGemini_(rk, user.Nama));
+      return;
+    }
+    if (cmd === "/evaluasimingguini" || cmd === "/evaluasiminggulalu" || msgText.toLowerCase() === "/evaluasi minggulalu") {
+      sendMessage(chatId, "⏳ <i>Meri sedang menganalisis pengeluaran minggu lalu...</i>");
+      var rk = getRekapPeriodeEvaluasi_(chatId, "minggulalu");
+      sendMessage(chatId, "💡 <b>EVALUASI KEUANGAN: MINGGU LALU</b>\n\n" + generateAnalisisKeuanganGemini_(rk, user.Nama));
+      return;
+    }
+    if (cmd === "/evaluasi" || cmd === "/evaluasibulanlalu" || msgText.toLowerCase() === "/evaluasi bulanlalu") {
+      sendMessage(chatId, "⏳ <i>Meri sedang menganalisis pengeluaran bulan lalu...</i>");
+      var rk = getRekapPeriodeEvaluasi_(chatId, "bulanlalu");
+      sendMessage(chatId, "💡 <b>EVALUASI KEUANGAN: BULAN LALU</b>\n\n" + generateAnalisisKeuanganGemini_(rk, user.Nama));
       return;
     }
 
@@ -249,6 +561,13 @@ function doPost(e) {
       return;
     }
 
+    // Routing Unduh / Ekspor Data
+    if (cmd === "/ekspor" || cmd === "/download" || cmd === "/excel") {
+      sendMessage(chatId, "⏳ <i>Sedang menyiapkan rekapan transaksi keuanganmu...</i>");
+      kirimFileExcelUser_(chatId, user.Nama);
+      return;
+    }
+
     // Command Khusus Otoritas Atas
     if (cmd === "/ringkasankhusus") {
       sendMessage(chatId, handleLaporanKhusus_(msgText, user, false));
@@ -261,12 +580,15 @@ function doPost(e) {
 
     // Manajemen Transaksi & User
     if (cmd === "/hapus") { sendMessage(chatId, handleHapusTransaksi_(msgText, user)); return; }
+    if (cmd === "/edit") { sendMessage(chatId, handleEditTransaksi_(msgText, user)); return; }
     if (cmd === "/tambahuser") { sendMessage(chatId, handleTambahUser_(msgText, user)); return; }
     if (cmd === "/hapususer") { sendMessage(chatId, handleHapusUser_(msgText, user)); return; }
     if (cmd === "/users") { sendMessage(chatId, handleListUsers_(user)); return; }
 
-    // Input Transaksi Teks (Sebaris atau Form Multiline)
+    // Cek apakah pesan bermaksud mencatat transaksi terstruktur
+    var kemungkinanCatatan = (cmd === "masuk" || cmd === "keluar" || msgText.indexOf(":") !== -1);
     var data = parseInputTransaction_(msgText);
+
     if (data && data.Jenis && data.Uang && data.Dompet) {
       var tglSlash = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
       if (data.Tanggal) {
@@ -275,15 +597,53 @@ function doPost(e) {
       }
 
       var newId = simpanBaris_(tglSlash, data.Jenis, data.Dompet, data.Uang, data.Kategori || "-", data.Detail || "-", chatId, telegramUsername, user.Nama);
-      sendMessage(chatId, "✅ <b>Catatan Berhasil Disimpan!</b>\n" +
+
+      var pesanSukses = "🎉 <b>Catatan Berhasil Disimpan!</b>\n\n" +
         "• <b>Jenis:</b> " + data.Jenis + "\n" +
         "• <b>Nominal:</b> Rp " + Number(data.Uang).toLocaleString('id-ID') + "\n" +
         "• <b>Dompet:</b> " + normalizeDompet_(data.Dompet) + "\n" +
         "• <b>Kategori:</b> " + (data.Kategori || "-") + "\n" +
-        "• <b>Detail:</b> " + (data.Detail || "-") + "\n" +
-        "🆔 ID: <code>" + newId + "</code>");
+        "• <b>Detail:</b> " + (data.Detail || "-") + "\n\n" +
+        "🆔 ID: <code>" + newId + "</code>\n\n" +
+        "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + newId + " " + data.Jenis + " " + data.Uang + " " + data.Dompet + " " + (data.Kategori || "Umum") + " " + (data.Detail || "-") + "</code>";
+
+      var kbHapus = [
+        [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + newId }]
+      ];
+
+      sendMessageWithKeyboard(chatId, pesanSukses, kbHapus);
+    } else if (kemungkinanCatatan) {
+      sendMessage(chatId, responSalahFormat_(msgText));
     } else {
-      sendMessage(chatId, "⚠️ Perintah atau format tidak dikenali. Ketik /menu untuk panduan.");
+      // Pemrosesan teks percakapan bebas atau transaksi non-formal dengan AI
+      var aiResult = prosesPesanDenganGemini_(msgText, user.Nama);
+
+      if (aiResult.tipe === "transaksi") {
+        var tglNow = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
+        var aiId = simpanBaris_(
+          tglNow, aiResult.jenis, aiResult.dompet, aiResult.nominal,
+          aiResult.kategori || "Umum",
+          aiResult.detail || "-",
+          chatId, telegramUsername,
+          user.Nama);
+
+        var pesanAiSukses = "✨ <b>Transaksi Berhasil Dicatat oleh AI!</b>\n\n" +
+          "• <b>Jenis:</b> " + aiResult.jenis + "\n" +
+          "• <b>Nominal:</b> Rp " + Number(aiResult.nominal).toLocaleString('id-ID') + "\n" +
+          "• <b>Dompet:</b> " + normalizeDompet_(aiResult.dompet) + "\n" +
+          "• <b>Kategori:</b> " + (aiResult.kategori || "-") + "\n" +
+          "• <b>Detail:</b> " + (aiResult.detail || "-") + "\n\n" +
+          "🆔 ID: <code>" + aiId + "</code>\n\n" +
+          "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + aiId + " " + aiResult.jenis + " " + aiResult.nominal + " " + normalizeDompet_(aiResult.dompet) + " " + (aiResult.kategori || "Umum") + " " + (aiResult.detail || "-") + "</code>";
+
+        var kbHapusAi = [
+          [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + aiId }]
+        ];
+
+        sendMessageWithKeyboard(chatId, pesanAiSukses, kbHapusAi);
+      } else {
+        sendMessage(chatId, aiResult.pesan);
+      }
     }
 
   } catch (err) {
@@ -291,7 +651,118 @@ function doPost(e) {
   }
 }
 
-// Parser Input Transaksi (Fleksibel: Mendukung Uang / Nominal / Rp / titik / spasi)
+// ==========================================
+// FUNGSI NOTIFIKASI PENDAFTARAN KE ADMIN
+// ==========================================
+function notifikasiPendaftaranToAdmin_(chatId, telegramUsername, namaTelegram) {
+  var cleanUser = String(telegramUsername || "").replace("@", "").trim();
+  var uParam = cleanUser ? encodeURIComponent(cleanUser) : "-";
+  var nParam = encodeURIComponent(String(namaTelegram || "User").substring(0, 25));
+
+  var pesanPendaftaran = "📨 <b>PENDAFTARAN PENGGUNA BARU</b>\n\n" +
+    "• <b>Nama:</b> " + (namaTelegram || "-") + "\n" +
+    "• <b>Username:</b> " + (cleanUser ? "@" + cleanUser : "@-") + "\n" +
+    "• <b>Chat ID:</b> <code>" + chatId + "</code>\n\n" +
+    "Silakan pilih tindakan persetujuan di bawah:";
+
+  var keyboard = [
+    [
+      { text: "✅ Setujui Pendaftaran", callback_data: "appr_step1_" + chatId + "_" + uParam + "_" + nParam },
+      { text: "❌ Tolak", callback_data: "reject_reg_" + chatId }
+    ]
+  ];
+
+  var adminList = getSuperadminAndAdminChatIds_();
+  adminList.forEach(function(adminChatId) {
+    sendMessageWithKeyboard(adminChatId, pesanPendaftaran, keyboard);
+  });
+}
+
+// ==========================================
+// FUNGSI MANUAL /tambahuser
+// ==========================================
+function handleTambahUser_(msgText, caller) {
+  var callerRole = (caller.Role || "").toLowerCase();
+  if (callerRole !== "admin" && callerRole !== "superadmin") {
+    return "❌ Akses ditolak. Hanya Admin atau Superadmin yang dapat menambah pengguna.";
+  }
+
+  var parts = msgText.split(" ").filter(Boolean);
+  if (parts.length < 3) {
+    return "⚠️ Format salah.\n" +
+           "• Format: <code>/tambahuser [id/username] [role] [nama_lengkap]</code>\n" +
+           "• Contoh: <code>/tambahuser 1020532606 user Irfani Putri</code>";
+  }
+
+  var targetInput = parts[1].trim();
+  var newRole = parts[2].toLowerCase();
+  var customName = parts.slice(3).join(" ").trim();
+
+  if (newRole !== "user" && newRole !== "admin" && newRole !== "superadmin") {
+    return "⚠️ Role harus 'user', 'admin', atau 'superadmin'.";
+  }
+
+  if (callerRole === "admin" && (newRole === "admin" || newRole === "superadmin")) {
+    return "❌ Admin biasa hanya dapat menambahkan role 'user'.";
+  }
+
+  var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Users");
+  if (!sheet) return "❌ Sheet 'Users' tidak ditemukan di Spreadsheet.";
+
+  var data = sheet.getDataRange().getValues();
+  var isNumericId = /^\d+$/.test(targetInput);
+  var targetUsername = isNumericId ? "" : (typeof normalizeUsername_ === "function" ? normalizeUsername_(targetInput) : targetInput.replace("@", "").trim().toLowerCase());
+  var targetChatId = isNumericId ? targetInput : "";
+
+  for (var i = 1; i < data.length; i++) {
+    var rowUser = (typeof normalizeUsername_ === "function" ? normalizeUsername_(data[i][0]) : String(data[i][0] || "").replace("@", "").trim().toLowerCase());
+    var rowChatId = String(data[i][1] || "").trim();
+
+    if ((isNumericId && rowChatId === targetChatId) || (!isNumericId && rowUser && rowUser === targetUsername)) {
+      sheet.getRange(i + 1, 4).setValue(newRole);
+      if (customName) sheet.getRange(i + 1, 3).setValue(customName);
+      return "✅ Peran pengguna <b>" + (customName || targetInput) + "</b> berhasil diperbarui menjadi <b>" + newRole + "</b>.";
+    }
+  }
+
+  var nowStr = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+  // 1. Simpan username murni tanpa tanda @
+  var userCol = targetUsername ? targetUsername.replace(/^@+/, "").trim() : "-";
+  var chatIdCol = targetChatId ? "'" + targetChatId : "";
+  var dispNameCol = customName || (isNumericId ? ("User " + targetChatId) : targetUsername);
+  var newRowData = [userCol, chatIdCol, dispNameCol, newRole, nowStr];
+
+  // 2. Cari baris kosong di tengah (jika ada baris yang selnya kosong)
+  var targetRow = -1;
+  for (var r = 1; r < data.length; r++) {
+    var checkUser = String(data[r][0] || "").trim();
+    var checkChatId = String(data[r][1] || "").trim();
+    if (!checkUser && !checkChatId) {
+      targetRow = r + 1; // Baris 1-indexed di spreadsheet
+      break;
+    }
+  }
+
+  // Jika ada baris kosong, isi baris tersebut. Jika tidak ada, baru taruh paling bawah
+  if (targetRow !== -1) {
+    sheet.getRange(targetRow, 1, 1, newRowData.length).setValues([newRowData]);
+  } else {
+    sheet.appendRow(newRowData);
+  }
+
+  if (targetChatId) {
+    try {
+      sendMessage(targetChatId, "🎉 <b>Selamat!</b> Akunmu telah disetujui sebagai <b>" + newRole + "</b>. Silakan ketik /menu untuk mulai.");
+    } catch (e) {}
+  }
+
+  return "✅ Pengguna <b>" + dispNameCol + "</b> berhasil didaftarkan sebagai <b>" + newRole + "</b>.";
+}
+
+// ==========================================
+// PARSER INPUT TRANSAKSI
+// ==========================================
 function parseInputTransaction_(text) {
   if (text.indexOf(":") !== -1) {
     var lines = text.split("\n");
@@ -301,32 +772,18 @@ function parseInputTransaction_(text) {
       if (p.length >= 2) {
         var k = p[0].trim().toLowerCase();
         var v = p.slice(1).join(":").trim();
-        
-        if (k.indexOf("jenis") !== -1 || k.indexOf("tipe") !== -1) {
-          res.Jenis = normalizeJenis_(v);
-        }
-        if (k.indexOf("dompet") !== -1 || k.indexOf("rekening") !== -1 || k.indexOf("akun") !== -1) {
-          res.Dompet = v;
-        }
-        // Mendukung kunci: uang, nominal, total, jumlah (dan menghapus Rp / titik)
-        if (k.indexOf("uang") !== -1 || k.indexOf("nominal") !== -1 || k.indexOf("total") !== -1 || k.indexOf("jumlah") !== -1) {
-          res.Uang = v.replace(/[^0-9]/g, '');
-        }
-        if (k.indexOf("kategori") !== -1 || k.indexOf("kat") !== -1) {
-          res.Kategori = v;
-        }
-        if (k.indexOf("detail") !== -1 || k.indexOf("keterangan") !== -1 || k.indexOf("ket") !== -1) {
-          res.Detail = v;
-        }
-        if (k.indexOf("tanggal") !== -1 || k.indexOf("tgl") !== -1) {
-          res.Tanggal = v;
-        }
+
+        if (k.indexOf("jenis") !== -1 || k.indexOf("tipe") !== -1) res.Jenis = normalizeJenis_(v);
+        if (k.indexOf("dompet") !== -1 || k.indexOf("rekening") !== -1 || k.indexOf("akun") !== -1) res.Dompet = v;
+        if (k.indexOf("uang") !== -1 || k.indexOf("nominal") !== -1 || k.indexOf("total") !== -1 || k.indexOf("jumlah") !== -1) res.Uang = v.replace(/[^0-9]/g, '');
+        if (k.indexOf("kategori") !== -1 || k.indexOf("kat") !== -1) res.Kategori = v;
+        if (k.indexOf("detail") !== -1 || k.indexOf("keterangan") !== -1 || k.indexOf("ket") !== -1) res.Detail = v;
+        if (k.indexOf("tanggal") !== -1 || k.indexOf("tgl") !== -1) res.Tanggal = v;
       }
     });
     return (res.Jenis && res.Uang && res.Dompet) ? res : null;
   }
 
-  // Format Cepat Sebaris (contoh: keluar 25000 BCA Makan Nasi padang)
   var parts = text.split(" ").filter(Boolean);
   if (parts.length >= 3) {
     var jenis = normalizeJenis_(parts[0]);
@@ -349,4 +806,108 @@ function normalizeJenis_(str) {
   if (s.indexOf("masuk") !== -1 || s.indexOf("in") !== -1) return "Masuk";
   if (s.indexOf("keluar") !== -1 || s.indexOf("out") !== -1) return "Keluar";
   return null;
+}
+
+// ==========================================
+// HAPUS TRANSAKSI BERDASARKAN ID
+// Format: /hapus [ID_TRANSAKSI]
+// ==========================================
+function handleHapusTransaksi_(msgText, caller) {
+  var parts = msgText.split(" ").filter(Boolean);
+  if (parts.length < 2) {
+    return "⚠️ Format salah.\nContoh: <code>/hapus 1MSBL081126</code>";
+  }
+
+  var targetId = parts[1].trim();
+  var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Transaksi");
+  if (!sheet) return "❌ Sheet Transaksi tidak ditemukan.";
+
+  var data = sheet.getDataRange().getValues();
+  var callerRole = (caller.Role || "user").toLowerCase();
+  var isPrivileged = (callerRole === "admin" || callerRole === "superadmin");
+
+  for (var i = 1; i < data.length; i++) {
+    var rowId = String(data[i][0] || "").trim(); // Kolom A: ID Transaksi
+    var rowChatId = String(data[i][7] || "").trim(); // Kolom H: Chat ID Pemilik
+
+    if (rowId.toLowerCase() === targetId.toLowerCase()) {
+      // Validasi kepemilikan
+      if (!isPrivileged && rowChatId !== String(caller.ChatID)) {
+        return "❌ Akses ditolak. Kamu hanya bisa menghapus transaksimu sendiri.";
+      }
+
+      var rowInfo = "• Jenis: " + data[i][2] + "\n• Nominal: Rp " + Number(data[i][4]).toLocaleString('id-ID') + "\n• Dompet: " + data[i][3];
+      sheet.deleteRow(i + 1);
+
+      return "🗑️ <b>Transaksi Berhasil Dihapus!</b>\n" +
+             "🆔 ID: <code>" + targetId + "</code>\n" + rowInfo;
+    }
+  }
+
+  return "⚠️ Transaksi dengan ID <code>" + targetId + "</code> tidak ditemukan.";
+}
+
+// ==========================================
+// EDIT TRANSAKSI BERDASARKAN ID
+// Format Cepat: /edit [ID] [Jenis] [Nominal] [Dompet] [Kategori] [Detail]
+// Contoh: /edit 1MSBL081126 Keluar 50000 Cash Makan Bakso
+// ==========================================
+function handleEditTransaksi_(msgText, caller) {
+  var lines = msgText.trim();
+  var parts = lines.split(" ").filter(Boolean);
+
+  if (parts.length < 5) {
+    return "⚠️ <b>Format Edit Transaksi:</b>\n" +
+           "<code>/edit [ID] [Jenis] [Nominal] [Dompet] [Kategori] [Detail]</code>\n\n" +
+           "<b>Contoh:</b>\n" +
+           "<code>/edit 1MSBL081126 Keluar 25000 Cash Makan Nasi Padang</code>";
+  }
+
+  var targetId = parts[1].trim();
+  var jenisBaru = normalizeJenis_(parts[2]);
+  var nominalBaru = Number(parts[3].replace(/[^0-9]/g, ''));
+  var dompetBaru = parts[4].trim();
+  var kategoriBaru = parts[5] || "Umum";
+  var detailBaru = parts.slice(6).join(" ") || "-";
+
+  if (!jenisBaru || !nominalBaru || !dompetBaru) {
+    return "⚠️ Data input tidak lengkap. Pastikan jenis, nominal, dan dompet valid.";
+  }
+
+  var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Transaksi");
+  if (!sheet) return "❌ Sheet Transaksi tidak ditemukan.";
+
+  var data = sheet.getDataRange().getValues();
+  var callerRole = (caller.Role || "user").toLowerCase();
+  var isPrivileged = (callerRole === "admin" || callerRole === "superadmin");
+
+  for (var i = 1; i < data.length; i++) {
+    var rowId = String(data[i][0] || "").trim();
+    var rowChatId = String(data[i][7] || "").trim();
+
+    if (rowId.toLowerCase() === targetId.toLowerCase()) {
+      if (!isPrivileged && rowChatId !== String(caller.ChatID)) {
+        return "❌ Akses ditolak. Kamu hanya bisa mengedit transaksimu sendiri.";
+      }
+
+      // Kolom spreadsheet: C: Jenis (3), D: Dompet (4), E: Nominal (5), F: Kategori (6), G: Detail (7)
+      sheet.getRange(i + 1, 3).setValue(jenisBaru);
+      sheet.getRange(i + 1, 4).setValue(normalizeDompet_(dompetBaru));
+      sheet.getRange(i + 1, 5).setValue(nominalBaru);
+      sheet.getRange(i + 1, 6).setValue(kategoriBaru);
+      sheet.getRange(i + 1, 7).setValue(detailBaru);
+
+      return "✏️ <b>Transaksi Berhasil Diperbarui!</b>\n\n" +
+             "🆔 ID: <code>" + targetId + "</code>\n" +
+             "• <b>Jenis:</b> " + jenisBaru + "\n" +
+             "• <b>Nominal:</b> Rp " + nominalBaru.toLocaleString('id-ID') + "\n" +
+             "• <b>Dompet:</b> " + normalizeDompet_(dompetBaru) + "\n" +
+             "• <b>Kategori:</b> " + kategoriBaru + "\n" +
+             "• <b>Detail:</b> " + detailBaru;
+    }
+  }
+
+  return "⚠️ Transaksi dengan ID <code>" + targetId + "</code> tidak ditemukan.";
 }

@@ -1,14 +1,18 @@
 # 🤖 Bot Cashflow Telegram Multi-User dengan Gemini OCR
 
-Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keuangan pribadi maupun kelompok. Dilengkapi fitur OCR otomatis menggunakan Google Gemini Vision AI (`gemini-3.8-flash`) untuk membaca total nominal struk belanja secara otomatis.
+Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keuangan pribadi maupun kelompok. Dilengkapi fitur OCR otomatis menggunakan Google Gemini Vision AI (`gemini-3.6-flash`) dengan mode instan (`thinkingBudget: 0`) untuk membaca struk belanja, pencatatan berbasis bahasa percakapan sehari-hari, evaluasi keuangan berkala, dan manajemen pengguna interaktif.
 
 ---
 
 ## ✨ Fitur Utama
-- **OCR Struk Belanja:** Mengambil total belanja dari foto struk/nota tanpa menghabiskan kuota Google Drive.
+- **OCR Struk Belanja:** Mengambil total nominal akhir, kategori, dan detail struk secara otomatis dari foto tanpa menghabiskan kuota Google Drive.
+- **Natural Language Input:** Mendukung pencatatan transaksi dari bahasa santai sehari-hari (contoh: *"tadi beli bensin 30rb cash"* atau *"gajian 5jt masuk bca"*).
 - **Pencatatan Fleksibel:** Mendukung perintah singkat satu baris maupun form multiline toleran format.
-- **Laporan Otomatis:** Ringkasan dan rincian transaksi harian, mingguan, bulanan, hingga per dompet.
-- **Multi-User & Hak Akses:** Registrasi akun approval admin/superadmin.
+- **Edit & Hapus Transaksi:** Fitur koreksi data via `/edit` dan penghapusan transaksi via perintah `/hapus <ID>` atau tombol instan `[🗑️ Hapus Transaksi Ini]`.
+- **Laporan Real-Time & Sisa Saldo:** Laporan ringkasan dan detail transaksi (harian, mingguan, bulanan) dengan format monospace `<pre>`, indikator status 🟢/🔴, serta rincian sisa saldo aktual per dompet (Cash, BRI, Blu, Jago, dll.) dan total saldo terkini[cite: 1, 2].
+- **Evaluasi Keuangan AI:** Ulasan performa pengeluaran otomatis untuk periode kemarin, minggu lalu, dan bulan lalu lengkap dengan pos pengeluaran terbesar[cite: 1].
+- **Ekspor Data:** Fitur unduh seluruh riwayat transaksi langsung ke chat Telegram dalam format file CSV/Excel[cite: 1].
+- **Multi-User & Hak Akses:** Registrasi akun via tombol approval admin/superadmin (`Setujui`/`Tolak`), panel pengelolaan role user, penanganan aman untuk user tanpa username Telegram, serta pembersihan username tanpa simbol `@`[cite: 1].
 
 ---
 
@@ -16,6 +20,8 @@ Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keua
 1. Youtube
 2. Repositori Orang
 3. AI (Gemini dan Claude)
+
+---
 
 ## 🚀 Panduan Instalasi
 
@@ -28,13 +34,13 @@ Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keua
    - Dapatkan API Key gratis (Free Tier).
 3. **Google Sheets:**
    - Buat spreadsheet baru di Google Drive.
-   - Siapkan dua tab: `Transaksi` dan `Users`.
+   - Siapkan dua tab: `Transaksi` dan `Users`[cite: 1].
    - Header tab `Transaksi`: `ID`, `Tanggal`, `Jenis`, `Dompet`, `Uang`, `Kategori`, `Detail`, `ChatID`, `Username`, `Nama`.
    - Header tab `Users`: `Username`, `ChatID`, `Nama`, `Role`, `TanggalDitambahkan`.
 
 ### 2. Pemasangan Kode di Google Apps Script
 1. Di Google Sheets Anda, buka menu **Ekstensi > Apps Script**.
-2. Buat file `.gs` sesuai struktur kode repositori (`Main.gs`, `Database.gs`, `TelegramAPI.gs`, `Config.gs`).
+2. Buat file `.gs` sesuai struktur kode repositori (`Main.gs`, `Database.gs`, `TelegramAPI.gs`, `Report.gs`, `Config.gs`)[cite: 1].
 3. Salin kode dari masing-masing file repositori ini ke dalam editor Apps Script.
 
 ### 3. Konfigurasi Properti Skrip (Environment)
@@ -59,4 +65,3 @@ Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keua
 Buka browser dan akses tautan berikut (ganti `<TOKEN_BOT>` dan `<URL_WEB_APP>`):
 ```text
 [https://api.telegram.org/bot](https://api.telegram.org/bot)<TOKEN_BOT>/setWebhook?url=<URL_WEB_APP>
-

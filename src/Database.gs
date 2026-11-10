@@ -150,17 +150,16 @@ var userRef = username ? String(username).replace(/^@/, "").trim() : (nama || "U
 
 function resolveUser_(chatId, username, nama) {
   var sheet = getUsersSheet_();
+  if (!sheet) return null;
   var rows = sheet.getDataRange().getValues();
   var normUser = normalizeUsername_(username);
 
   for (var i = HEADER_ROWS.Users; i < rows.length; i++) {
     var uRow = normalizeUsername_(rows[i][0]);
     var cRow = String(rows[i][1] || "").trim();
-    if (cRow === String(chatId) || (normUser && uRow === normUser)) {
-      if (!cRow && chatId) {
-        sheet.getRange(i + 1, 2).setValue(String(chatId));
-        sheet.getRange(i + 1, 3).setValue(nama);
-      }
+    
+    // Cocokkan ChatID terlebih dahulu
+    if (cRow && cRow === String(chatId)) {
       return {
         rowIndex: i + 1,
         Username: rows[i][0],
@@ -208,13 +207,77 @@ function handleHapusTransaksi_(msgText, user) {
 }
 
 function handleTambahUser_(msgText, caller) {
-  if (caller.Role !== "admin" && caller.Role !== "superadmin") return "❌ Khusus admin/superadmin.";
-  var p = msgText.split(" ").filter(Boolean);
-  if (p.length < 3) return "⚠️ Format: <code>/tambahuser @username &lt;user|admin&gt;</code>";
-  var u = normalizeUsername_(p[1]);
-  var r = p[2].toLowerCase();
-  addUserRow_(u, "", "", r);
-  return "✅ @" + u + " berhasil didaftarkan sebagai <b>" + r + "</b>.";
+  var callerRole = (caller.Role || "").toLowerCase();
+  if (callerRole !== "admin" && callerRole !== "superadmin") {
+    return "❌ Akses ditolak. Hanya Admin atau Superadmin yang dapat menambah pengguna.";
+  }
+
+  var parts = msgText.split(" ").filter(Boolean);
+  if (parts.length < 3) {
+    return "⚠️ Format salah.\n" +
+           "• Format: <code>/tambahuser [id/username] [role] [nama_lengkap]</code>\n" +
+           "• Contoh: <code>/tambahuser 1020532606 user Irfani Putri</code>";
+  }
+
+  var targetInput = parts[1].trim();
+  var newRole = parts[2].toLowerCase();
+  // Mengambil nama lengkap jika disertakan di belakang perintah
+  var customName = parts.slice(3).join(" ").trim();
+
+  if (newRole !== "user" && newRole !== "admin" && newRole !== "superadmin") {
+    return "⚠️ Role harus 'user', 'admin', atau 'superadmin'.";
+  }
+
+  if (callerRole === "admin" && (newRole === "admin" || newRole === "superadmin")) {
+    return "❌ Admin biasa hanya dapat menambahkan role 'user'.";
+  }
+
+  var ss;
+  if (typeof getSpreadsheet_ === "function") {
+    ss = getSpreadsheet_();
+  } else {
+    var props = PropertiesService.getScriptProperties();
+    var sheetUrl = props.getProperty("SPREADSHEET_URL");
+    ss = sheetUrl ? SpreadsheetApp.openByUrl(sheetUrl) : SpreadsheetApp.getActiveSpreadsheet();
+  }
+  
+  var sheet = ss.getSheetByName("Users");
+  if (!sheet) return "❌ Sheet 'Users' tidak ditemukan di Spreadsheet.";
+
+  var data = sheet.getDataRange().getValues();
+  var isNumericId = /^\d+$/.test(targetInput);
+  var targetUsername = isNumericId ? "" : (typeof normalizeUsername_ === "function" ? normalizeUsername_(targetInput) : targetInput.replace("@", "").trim().toLowerCase());
+  var targetChatId = isNumericId ? targetInput : "";
+
+  // 1. Jika sudah ada di sheet Users, perbarui Role dan Nama
+  for (var i = 1; i < data.length; i++) {
+    var rowUser = (typeof normalizeUsername_ === "function" ? normalizeUsername_(data[i][0]) : String(data[i][0] || "").replace("@", "").trim().toLowerCase());
+    var rowChatId = String(data[i][1] || "").trim();
+
+    if ((isNumericId && rowChatId === targetChatId) || (!isNumericId && rowUser && rowUser === targetUsername)) {
+      sheet.getRange(i + 1, 4).setValue(newRole);
+      if (customName) {
+        sheet.getRange(i + 1, 3).setValue(customName);
+      }
+      return "✅ Data pengguna <b>" + (customName || targetInput) + "</b> berhasil diperbarui menjadi <b>" + newRole + "</b>.";
+    }
+  }
+
+  // 2. Jika pendaftar baru, simpan nama Telegram yang sebenarnya
+  var nowStr = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss");
+  var userCol = targetUsername ? "@" + targetUsername : "-";
+  var chatIdCol = targetChatId ? "'" + targetChatId : "";
+  var dispNameCol = customName || (isNumericId ? ("User " + targetChatId) : targetUsername);
+
+  sheet.appendRow([userCol, chatIdCol, dispNameCol, newRole, nowStr]);
+
+  if (targetChatId) {
+    try {
+      sendMessage(targetChatId, "🎉 <b>Selamat!</b> Akunmu telah disetujui sebagai <b>" + newRole + "</b>. Silakan ketik /menu untuk mulai.");
+    } catch (e) {}
+  }
+
+  return "✅ Pengguna <b>" + dispNameCol + "</b> berhasil didaftarkan sebagai <b>" + newRole + "</b>.";
 }
 
 function handleHapusUser_(msgText, caller) {
@@ -234,15 +297,46 @@ function handleHapusUser_(msgText, caller) {
 }
 
 function handleListUsers_(caller) {
-  if (caller.Role !== "admin" && caller.Role !== "superadmin") return "❌ Khusus admin.";
-  var rows = getUsersSheet_().getDataRange().getValues();
-  var msg = "👥 <b>DAFTAR PENGGUNA TERDAFTAR:</b>\n";
-  for (var i = HEADER_ROWS.Users; i < rows.length; i++) {
-    if (rows[i][0] || rows[i][1]) {
-      msg += "• @" + (rows[i][0] || "-") + " (" + (rows[i][2] || "User") + ") — <b>" + rows[i][3] + "</b>\n";
-    }
+  var callerRole = (caller.Role || "").toLowerCase();
+  if (callerRole !== "admin" && callerRole !== "superadmin") {
+    return "❌ Akses ditolak. Hanya Admin atau Superadmin yang dapat melihat daftar pengguna.";
   }
-  return msg;
+
+  var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Users");
+  if (!sheet) return "❌ Sheet 'Users' tidak ditemukan.";
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return "📭 Belum ada pengguna yang terdaftar.";
+
+  var keyboardUsers = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var rawUser = String(data[i][0] || "").replace(/^@+/, "").trim();
+    var cId = String(data[i][1] || "").trim();
+    var dName = String(data[i][2] || "").trim();
+    var role = String(data[i][3] || "user").trim();
+
+    if (!cId && !rawUser) continue;
+
+    // Normalisasi tampilan label tombol
+    var labelNama = dName && dName !== "." ? dName : (rawUser ? "@" + rawUser : "ID: " + cId);
+    var badgeRole = role === "superadmin" ? "👑" : (role === "admin" ? "🛡️" : "👤");
+
+    keyboardUsers.push([
+      {
+        text: badgeRole + " " + labelNama + " (" + role + ")",
+        callback_data: "mg_usr_" + cId
+      }
+    ]);
+  }
+
+  keyboardUsers.push([{ text: "🔙 Tutup Menu", callback_data: "cancel_appr" }]);
+
+  return {
+    pesan: "👥 <b>PANEL MANAJEMEN PENGGUNA</b>\n\nKlik nama pengguna di bawah untuk mengedit role atau menghapus akun:",
+    keyboard: keyboardUsers
+  };
 }
 
 function getUserByUsername_(username) {
@@ -262,4 +356,95 @@ function getUserByUsername_(username) {
     }
   }
   return null;
+}
+
+// ==========================================
+// HITUNG DATA KEUANGAN FLEKSIBEL UNTUK AI
+// Periode: "kemarin", "minggulalu", "bulanlalu"
+// ==========================================
+
+function getRekapPeriodeEvaluasi_(chatId, periode) {
+  var rows = getDashboardRows_();
+  var now = new Date();
+  var totalMasuk = 0;
+  var totalKeluar = 0;
+  var kategoriKeluar = {};
+  var labelPeriode = "";
+
+  if (periode === "kemarin") {
+    var dKemarin = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    var tglTarget = Utilities.formatDate(dKemarin, "GMT+7", "dd/MM/yyyy");
+    labelPeriode = "Kemarin (" + tglTarget + ")";
+
+    rows.forEach(function(r) {
+      if (String(r.chatId) === String(chatId) && r.tanggalRaw === tglTarget) {
+        if (r.jenis === "masuk") totalMasuk += r.nominal;
+        if (r.jenis === "keluar") {
+          totalKeluar += r.nominal;
+          var kat = r.kategori || "Lain-lain";
+          kategoriKeluar[kat] = (kategoriKeluar[kat] || 0) + r.nominal;
+        }
+      }
+    });
+
+  } else if (periode === "minggulalu") {
+    // Menghitung Senin - Minggu pada pekan lalu
+    var dayOfWeek = now.getDay(); // 0: Minggu, 1: Senin, dst.
+    var distanceToMon = (dayOfWeek === 0) ? 6 : (dayOfWeek - 1);
+    
+    var startLastWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMon - 7);
+    var endLastWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMon - 1);
+
+    var startStr = Utilities.formatDate(startLastWeek, "GMT+7", "dd/MM/yyyy");
+    var endStr = Utilities.formatDate(endLastWeek, "GMT+7", "dd/MM/yyyy");
+    labelPeriode = "Minggu Lalu (" + startStr + " s/d " + endStr + ")";
+
+    rows.forEach(function(r) {
+      if (String(r.chatId) === String(chatId)) {
+        var dp = r.tanggalRaw.split("/");
+        var rowDate = new Date(parseInt(dp[2], 10), parseInt(dp[1], 10) - 1, parseInt(dp[0], 10));
+        if (rowDate >= startLastWeek && rowDate <= endLastWeek) {
+          if (r.jenis === "masuk") totalMasuk += r.nominal;
+          if (r.jenis === "keluar") {
+            totalKeluar += r.nominal;
+            var kat = r.kategori || "Lain-lain";
+            kategoriKeluar[kat] = (kategoriKeluar[kat] || 0) + r.nominal;
+          }
+        }
+      }
+    });
+
+  } else {
+    // Default: Bulan Lalu
+    var targetDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var targetBulan = pad2_(targetDate.getMonth() + 1);
+    var targetTahun = String(targetDate.getFullYear());
+    var targetBulanTahun = targetBulan + "-" + targetTahun;
+    labelPeriode = "Bulan Lalu (" + targetBulanTahun + ")";
+
+    rows.forEach(function(r) {
+      if (String(r.chatId) === String(chatId) && r.bulanTahun === targetBulanTahun) {
+        if (r.jenis === "masuk") totalMasuk += r.nominal;
+        if (r.jenis === "keluar") {
+          totalKeluar += r.nominal;
+          var kat = r.kategori || "Lain-lain";
+          kategoriKeluar[kat] = (kategoriKeluar[kat] || 0) + r.nominal;
+        }
+      }
+    });
+  }
+
+  var katSorted = Object.keys(kategoriKeluar).map(function(k) {
+    return { nama: k, total: kategoriKeluar[k] };
+  }).sort(function(a, b) {
+    return b.total - a.total;
+  });
+
+  return {
+    label: labelPeriode,
+    pemasukan: totalMasuk,
+    pengeluaran: totalKeluar,
+    selisih: totalKeluar - totalMasuk,
+    topKategori: katSorted.slice(0, 3)
+  };
 }
