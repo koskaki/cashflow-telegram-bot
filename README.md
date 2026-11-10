@@ -1,6 +1,6 @@
-# 🤖 Bot Cashflow Telegram Multi-User dengan Gemini OCR
+# 🤖 Meri Si Pencatat Keuangan (Bot Telegram Multi-User dengan Gemini OCR)
 
-Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keuangan pribadi maupun kelompok. Dilengkapi fitur OCR otomatis menggunakan Google Gemini Vision AI (`gemini-3.6-flash`) dengan mode instan (`thinkingBudget: 0`) untuk membaca struk belanja, pencatatan berbasis bahasa percakapan sehari-hari, evaluasi keuangan berkala, dan manajemen pengguna interaktif.
+**Meri Si Pencatat Keuangan** adalah bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keuangan pribadi maupun kelompok. Dilengkapi fitur OCR otomatis menggunakan Google Gemini Vision AI (`gemini-3.6-flash`) dengan mode instan (`thinkingBudget: 0`) untuk membaca struk belanja, pencatatan berbasis bahasa percakapan sehari-hari, evaluasi keuangan berkala, dan manajemen pengguna interaktif.
 
 ---
 
@@ -10,7 +10,7 @@ Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keua
 - **Pencatatan Fleksibel:** Mendukung perintah singkat satu baris maupun form multiline toleran format.
 - **Edit & Hapus Transaksi:** Fitur koreksi data via `/edit` dan penghapusan transaksi via perintah `/hapus <ID>` atau tombol instan `[🗑️ Hapus Transaksi Ini]`.
 - **Laporan Real-Time & Sisa Saldo:** Laporan ringkasan dan detail transaksi (harian, mingguan, bulanan) dengan format monospace `<pre>`, indikator status 🟢/🔴, serta rincian sisa saldo aktual per dompet (Cash, BRI, Blu, Jago, dll.) dan total saldo terkini[cite: 1, 2].
-- **Evaluasi Keuangan AI:** Ulasan performa pengeluaran otomatis untuk periode kemarin, minggu lalu, dan bulan lalu lengkap dengan pos pengeluaran terbesar[cite: 1].
+- **Evaluasi Keuangan AI:** Ulasan performa pengeluaran otomatis oleh Meri untuk periode kemarin, minggu lalu, dan bulan lalu lengkap dengan pos pengeluaran terbesar[cite: 1].
 - **Ekspor Data:** Fitur unduh seluruh riwayat transaksi langsung ke chat Telegram dalam format file CSV/Excel[cite: 1].
 - **Multi-User & Hak Akses:** Registrasi akun via tombol approval admin/superadmin (`Setujui`/`Tolak`), panel pengelolaan role user, penanganan aman untuk user tanpa username Telegram, serta pembersihan username tanpa simbol `@`[cite: 1].
 
@@ -26,9 +26,9 @@ Bot Telegram berbasis Google Apps Script dan Google Sheets untuk pencatatan keua
 ## 🚀 Panduan Instalasi
 
 ### 1. Persiapan Akun & API Key
-1. **Bot Telegram:**
+1. **Bot Telegram (Meri Si Pencatat Keuangan):**
    - Hubungi [@BotFather](https://t.me/BotFather) di Telegram.
-   - Buat bot baru lewat `/newbot` dan simpan token bot Anda.
+   - Buat bot baru lewat `/newbot`, beri nama tampilan **Meri Si Pencatat Keuangan**, dan simpan token bot Anda.
 2. **Google Gemini API Key:**
    - Buka [Google AI Studio](https://aistudio.google.com/).
    - Dapatkan API Key gratis (Free Tier).
