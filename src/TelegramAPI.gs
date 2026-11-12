@@ -43,16 +43,24 @@ function sendMenuUtama(chatId, user) {
     [
       { text: "📊 Ringkasan Hari Ini", callback_data: "btn_ringkasan_hariini" },
       { text: "📈 Ringkasan Minggu Ini", callback_data: "btn_ringkasan_mingguini" },
+      
+    ],
+    [
       { text: "📅 Ringkasan Bulan Ini", callback_data: "btn_ringkasan_bulanini" }
     ],
     [
       { text: "📝 Detail Hari Ini", callback_data: "btn_detail_hariini" },
       { text: "📑 Detail Minggu Ini", callback_data: "btn_detail_mingguini" },
+      
+    ],
+    [
       { text: "🗓️ Detail Bulan Ini", callback_data: "btn_detail_bulanini" }
     ],
     [
       { text: "💡 Evaluasi Kemarin", callback_data: "btn_eval_kemarin" },
       { text: "💡 Evaluasi Minggu Lalu", callback_data: "btn_eval_minggulalu" },
+    ],
+    [
       { text: "💡 Evaluasi Bulan Lalu", callback_data: "btn_eval_bulanlalu" }
     ],
     [
@@ -440,10 +448,10 @@ function generateAnalisisKeuanganGemini_(dataRekap, namaUser) {
       var resJson = JSON.parse(response.getContentText());
       return resJson.candidates[0].content.parts[0].text.trim();
     } else {
-      return "⚠️ Sedang ada kendala ke server AI. Coba lagi sebentar ya!";
+      return "⚠️ Sedang ada kendala ke server AI. Meri coba lagi, sebentar ya!";
     }
   } catch (err) {
-    return "❌ Terjadi error: " + err.message;
+    return "❌ Haduh Terjadi error: " + err.message;
   }
 }
 
@@ -494,7 +502,7 @@ function kirimFileExcelUser_(chatId, namaUser) {
   });
 
   if (count === 0) {
-    sendMessage(chatId, "⚠️ Kamu belum memiliki riwayat transaksi untuk diekspor.");
+    sendMessage(chatId, "⚠️ Meri rasa kamu belum memiliki riwayat transaksi untuk diekspor. Huhuu");
     return;
   }
 
@@ -508,8 +516,82 @@ function kirimFileExcelUser_(chatId, namaUser) {
   sendTelegramDocument(
     chatId, 
     blob, 
-    "📁 <b>Laporan Keuanganmu Siap!</b>\n\n" +
+    "📁 <b>Laporan Keuanganmu Siap yaaa!</b>\n\n" +
     "• Total Transaksi: <b>" + count + " data</b>\n" +
     "• Format: CSV (Bisa dibuka langsung di Excel / Sheets)"
   );
+}
+
+// Generator Token 5 Karakter Huruf & Angka Acak
+function generateTokenTransaksi_() {
+  var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Tanpa 0, O, 1, I agar tidak keliru
+  var token = "";
+  for (var i = 0; i < 5; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+// Generator Token 5 Karakter Acak (Huruf Besar & Angka)
+function generateTokenTransaksi_() {
+  var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  var token = "";
+  for (var i = 0; i < 5; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+function simpanBaris_(tanggal, jenis, dompet, uang, kategori, detail, chatId, username, nama) {
+  var sheet = getDashboardSheet_();
+  var rows = sheet.getDataRange().getValues();
+
+  jenis = (jenis.toLowerCase() === "masuk" || jenis.toLowerCase() === "in") ? "Masuk" : "Keluar";
+  dompet = normalizeDompet_(dompet);
+  var uangNum = parseInt(String(uang).replace(/[^0-9]/g, ""), 10) || 0;
+  var userRef = username ? String(username).replace(/^@+/, "").trim() : (nama || "User");
+  var tglStr = String(tanggal);
+
+  var sysId = generateCustomId_(tglStr, jenis, dompet);
+  var tokenTx = generateTokenTransaksi_();
+
+  // Urutan kolom: 
+  // [0] ID, [1] Token, [2] Tanggal, [3] Jenis, [4] Dompet, [5] Uang, 
+  // [6] Kategori, [7] Detail, [8] ChatID, [9] Username, [10] Nama
+  var newRowData = [
+    sysId,
+    tokenTx,
+    tglStr,
+    jenis,
+    dompet,
+    uangNum,
+    kategori || "Umum",
+    detail || "-",
+    String(chatId),
+    userRef,
+    nama || "-"
+  ];
+
+  // Cari baris kosong di tengah sebelum appendRow
+  var targetRow = -1;
+  var startRow = HEADER_ROWS.Transaksi || 2;
+  for (var i = startRow; i < rows.length; i++) {
+    if (!rows[i][0] || String(rows[i][0]).trim() === "") {
+      targetRow = i + 1;
+      break;
+    }
+  }
+
+  if (targetRow !== -1) {
+    sheet.getRange(targetRow, 1, 1, newRowData.length).setValues([newRowData]);
+  } else {
+    sheet.appendRow(newRowData);
+    targetRow = sheet.getLastRow();
+  }
+
+  // Format rupiah di Kolom F (kolom ke-6)
+  sheet.getRange(targetRow, 6).setNumberFormat('"Rp"#,##0');
+
+  // Kembalikan ID sistem dan Token
+  return { id: sysId, token: tokenTx };
 }

@@ -19,7 +19,7 @@ function doPost(e) {
 
       ensureSheets_();
       var userCb = resolveUser_(chatId, telegramUsername, namaTelegram);
-      
+
       // Validasi ketat: User wajib terdaftar aktif di sheet Users
       if (!userCb) {
         sendMessage(chatId, "⛔ <b>Akses Ditolak!</b>\nAkunmu belum terdaftar atau telah dinonaktifkan. Ketik <code>/daftar</code> untuk meminta persetujuan admin.");
@@ -147,7 +147,7 @@ function doPost(e) {
             sendMessage(chatId, "✅ Role untuk ID <code>" + tCId + "</code> berhasil diubah menjadi <b>" + roleBaru + "</b>.");
             try {
               sendMessage(tCId, "ℹ️ Role akunmu telah diubah menjadi <b>" + roleBaru + "</b> oleh pengelola.");
-            } catch (e) {}
+            } catch (e) { }
             return;
           }
         }
@@ -178,7 +178,7 @@ function doPost(e) {
             sendMessage(chatId, "🗑️ Pengguna dengan ID <code>" + delCId + "</code> berhasil dihapus dari sistem.");
             try {
               sendMessage(delCId, "⚠️ Akses akunmu ke bot ini telah dinonaktifkan oleh Superadmin.");
-            } catch (e) {}
+            } catch (e) { }
             return;
           }
         }
@@ -244,7 +244,7 @@ function doPost(e) {
         return;
       }
 
-     // Langkah 2: Admin memilih role -> Simpan ke sheet Users
+      // Langkah 2: Admin memilih role -> Simpan ke sheet Users
       if (callbackData.indexOf("appr_role_") === 0) {
         if (userCb.Role !== "admin" && userCb.Role !== "superadmin") {
           sendMessage(chatId, "❌ Akses ditolak.");
@@ -304,7 +304,7 @@ function doPost(e) {
 
         try {
           sendMessage(targetCId, "🎉 <b>Selamat!</b> Akunmu telah disetujui sebagai <b>" + roleDipilih + "</b>.\nSilakan ketik /menu untuk mulai.");
-        } catch (err) {}
+        } catch (err) { }
         return;
       }
 
@@ -314,7 +314,7 @@ function doPost(e) {
         sendMessage(chatId, "❌ Pendaftaran akun ID <code>" + rejectId + "</code> telah ditolak.");
         try {
           sendMessage(rejectId, "Mohon maaf, permohonan pendaftaran akunmu belum disetujui oleh admin.");
-        } catch (err) {}
+        } catch (err) { }
         return;
       }
 
@@ -336,7 +336,7 @@ function doPost(e) {
         var keyboardDompet = [];
         var rowTemp = [];
 
-        daftarDompet.forEach(function(dmp, idx) {
+        daftarDompet.forEach(function (dmp, idx) {
           rowTemp.push({
             text: "💳 " + dmp,
             callback_data: "save_struk_" + jenis + "_" + encodeURIComponent(dmp) + "_" + uang + "_" + kat + "_" + det
@@ -368,19 +368,19 @@ function doPost(e) {
         var katFinal = decodeURIComponent(pSave[5] || "Umum");
         var detFinal = decodeURIComponent(pSave[6] || "-");
         var tglSlash = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
-        var newId = simpanBaris_(tglSlash, jenisFinal, dompetFinal, uangFinal, katFinal, detFinal, chatId, telegramUsername, userCb.Nama);
+        var resStruk = simpanBaris_(tglSlash, jenisFinal, dompetFinal, uangFinal, katFinal, detFinal, chatId, telegramUsername, userCb.Nama);
 
         var pesanStrukSukses = "✅ <b>Transaksi dari Struk Berhasil Dicatat!</b>\n\n" +
           "• <b>Jenis:</b> " + jenisFinal + "\n" +
           "• <b>Nominal:</b> Rp " + Number(uangFinal).toLocaleString('id-ID') + "\n" +
           "• <b>Dompet:</b> " + dompetFinal + "\n" +
           "• <b>Kategori:</b> " + katFinal + "\n" +
-          "• <b>Detail:</b> " + detFinal + "\n" +
-          "🆔 ID: <code>" + newId + "</code>\n\n" +
-          "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + newId + " " + jenisFinal + " " + uangFinal + " " + dompetFinal + " " + katFinal + " " + detFinal + "</code>";
+          "• <b>Detail:</b> " + detFinal + "\n\n" +
+          "🏷️ <b>Token:</b> <code>" + resStruk.token + "</code>\n\n" +
+          "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + resStruk.token + " " + jenisFinal + " " + uangFinal + " " + dompetFinal + " " + katFinal + " " + detFinal + "</code>";
 
         var kbHapusStruk = [
-          [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + newId }]
+          [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + resStruk.token }]
         ];
 
         sendMessageWithKeyboard(chatId, pesanStrukSukses, kbHapusStruk);
@@ -596,7 +596,7 @@ function doPost(e) {
         if (parsedTgl) tglSlash = pad2_(parsedTgl.day) + "/" + pad2_(parsedTgl.month) + "/" + parsedTgl.year;
       }
 
-      var newId = simpanBaris_(tglSlash, data.Jenis, data.Dompet, data.Uang, data.Kategori || "-", data.Detail || "-", chatId, telegramUsername, user.Nama);
+      var resTx = simpanBaris_(tglSlash, data.Jenis, data.Dompet, data.Uang, data.Kategori || "-", data.Detail || "-", chatId, telegramUsername, user.Nama);
 
       var pesanSukses = "🎉 <b>Catatan Berhasil Disimpan!</b>\n\n" +
         "• <b>Jenis:</b> " + data.Jenis + "\n" +
@@ -604,11 +604,11 @@ function doPost(e) {
         "• <b>Dompet:</b> " + normalizeDompet_(data.Dompet) + "\n" +
         "• <b>Kategori:</b> " + (data.Kategori || "-") + "\n" +
         "• <b>Detail:</b> " + (data.Detail || "-") + "\n\n" +
-        "🆔 ID: <code>" + newId + "</code>\n\n" +
-        "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + newId + " " + data.Jenis + " " + data.Uang + " " + data.Dompet + " " + (data.Kategori || "Umum") + " " + (data.Detail || "-") + "</code>";
+        "🏷️ <b>Token:</b> <code>" + resTx.token + "</code>\n\n" +
+        "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + resTx.token + " " + data.Jenis + " " + data.Uang + " " + data.Dompet + " " + (data.Kategori || "Umum") + " " + (data.Detail || "-") + "</code>";
 
       var kbHapus = [
-        [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + newId }]
+        [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + resTx.token }]
       ];
 
       sendMessageWithKeyboard(chatId, pesanSukses, kbHapus);
@@ -620,12 +620,13 @@ function doPost(e) {
 
       if (aiResult.tipe === "transaksi") {
         var tglNow = Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy");
-        var aiId = simpanBaris_(
+        var resAi = simpanBaris_(
           tglNow, aiResult.jenis, aiResult.dompet, aiResult.nominal,
           aiResult.kategori || "Umum",
           aiResult.detail || "-",
           chatId, telegramUsername,
-          user.Nama);
+          user.Nama
+        );
 
         var pesanAiSukses = "✨ <b>Transaksi Berhasil Dicatat oleh AI!</b>\n\n" +
           "• <b>Jenis:</b> " + aiResult.jenis + "\n" +
@@ -633,14 +634,15 @@ function doPost(e) {
           "• <b>Dompet:</b> " + normalizeDompet_(aiResult.dompet) + "\n" +
           "• <b>Kategori:</b> " + (aiResult.kategori || "-") + "\n" +
           "• <b>Detail:</b> " + (aiResult.detail || "-") + "\n\n" +
-          "🆔 ID: <code>" + aiId + "</code>\n\n" +
-          "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + aiId + " " + aiResult.jenis + " " + aiResult.nominal + " " + normalizeDompet_(aiResult.dompet) + " " + (aiResult.kategori || "Umum") + " " + (aiResult.detail || "-") + "</code>";
+          "🏷️ <b>Token:</b> <code>" + resAi.token + "</code>\n\n" +
+          "<i>💡 Mau edit? Ketik:</i>\n<code>/edit " + resAi.token + " " + aiResult.jenis + " " + aiResult.nominal + " " + normalizeDompet_(aiResult.dompet) + " " + (aiResult.kategori || "Umum") + " " + (aiResult.detail || "-") + "</code>";
 
         var kbHapusAi = [
-          [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + aiId }]
+          [{ text: "🗑️ Hapus Transaksi Ini", callback_data: "deltx_" + resAi.token }]
         ];
 
         sendMessageWithKeyboard(chatId, pesanAiSukses, kbHapusAi);
+
       } else {
         sendMessage(chatId, aiResult.pesan);
       }
@@ -673,7 +675,7 @@ function notifikasiPendaftaranToAdmin_(chatId, telegramUsername, namaTelegram) {
   ];
 
   var adminList = getSuperadminAndAdminChatIds_();
-  adminList.forEach(function(adminChatId) {
+  adminList.forEach(function (adminChatId) {
     sendMessageWithKeyboard(adminChatId, pesanPendaftaran, keyboard);
   });
 }
@@ -690,8 +692,8 @@ function handleTambahUser_(msgText, caller) {
   var parts = msgText.split(" ").filter(Boolean);
   if (parts.length < 3) {
     return "⚠️ Format salah.\n" +
-           "• Format: <code>/tambahuser [id/username] [role] [nama_lengkap]</code>\n" +
-           "• Contoh: <code>/tambahuser 1020532606 user Irfani Putri</code>";
+      "• Format: <code>/tambahuser [id/username] [role] [nama_lengkap]</code>\n" +
+      "• Contoh: <code>/tambahuser 1020532606 user Irfani Putri</code>";
   }
 
   var targetInput = parts[1].trim();
@@ -754,7 +756,7 @@ function handleTambahUser_(msgText, caller) {
   if (targetChatId) {
     try {
       sendMessage(targetChatId, "🎉 <b>Selamat!</b> Akunmu telah disetujui sebagai <b>" + newRole + "</b>. Silakan ketik /menu untuk mulai.");
-    } catch (e) {}
+    } catch (e) { }
   }
 
   return "✅ Pengguna <b>" + dispNameCol + "</b> berhasil didaftarkan sebagai <b>" + newRole + "</b>.";
@@ -767,7 +769,7 @@ function parseInputTransaction_(text) {
   if (text.indexOf(":") !== -1) {
     var lines = text.split("\n");
     var res = {};
-    lines.forEach(function(l) {
+    lines.forEach(function (l) {
       var p = l.split(":");
       if (p.length >= 2) {
         var k = p[0].trim().toLowerCase();
@@ -808,17 +810,11 @@ function normalizeJenis_(str) {
   return null;
 }
 
-// ==========================================
-// HAPUS TRANSAKSI BERDASARKAN ID
-// Format: /hapus [ID_TRANSAKSI]
-// ==========================================
 function handleHapusTransaksi_(msgText, caller) {
   var parts = msgText.split(" ").filter(Boolean);
-  if (parts.length < 2) {
-    return "⚠️ Format salah.\nContoh: <code>/hapus 1MSBL081126</code>";
-  }
+  if (parts.length < 2) return "⚠️ Format salah.\nContoh: <code>/hapus A7X9K</code>";
 
-  var targetId = parts[1].trim();
+  var target = parts[1].trim().toLowerCase();
   var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("Transaksi");
   if (!sheet) return "❌ Sheet Transaksi tidak ditemukan.";
@@ -828,43 +824,36 @@ function handleHapusTransaksi_(msgText, caller) {
   var isPrivileged = (callerRole === "admin" || callerRole === "superadmin");
 
   for (var i = 1; i < data.length; i++) {
-    var rowId = String(data[i][0] || "").trim(); // Kolom A: ID Transaksi
-    var rowChatId = String(data[i][7] || "").trim(); // Kolom H: Chat ID Pemilik
+    var rowId = String(data[i][0] || "").trim().toLowerCase();     // Kolom A: ID
+    var rowToken = String(data[i][1] || "").trim().toLowerCase();  // Kolom B: Token
+    var rowChatId = String(data[i][8] || "").trim();               // Kolom I: ChatID
 
-    if (rowId.toLowerCase() === targetId.toLowerCase()) {
-      // Validasi kepemilikan
+    if (rowToken === target || rowId === target) {
       if (!isPrivileged && rowChatId !== String(caller.ChatID)) {
         return "❌ Akses ditolak. Kamu hanya bisa menghapus transaksimu sendiri.";
       }
 
-      var rowInfo = "• Jenis: " + data[i][2] + "\n• Nominal: Rp " + Number(data[i][4]).toLocaleString('id-ID') + "\n• Dompet: " + data[i][3];
+      var rowInfo = "• Jenis: " + data[i][3] + "\n• Nominal: Rp " + Number(data[i][5]).toLocaleString('id-ID') + "\n• Dompet: " + data[i][4];
       sheet.deleteRow(i + 1);
 
       return "🗑️ <b>Transaksi Berhasil Dihapus!</b>\n" +
-             "🆔 ID: <code>" + targetId + "</code>\n" + rowInfo;
+        "🏷️ <b>Token:</b> <code>" + (data[i][1] || data[i][0]) + "</code>\n" + rowInfo;
     }
   }
 
-  return "⚠️ Transaksi dengan ID <code>" + targetId + "</code> tidak ditemukan.";
+  return "⚠️ Transaksi dengan token/ID <code>" + parts[1] + "</code> tidak ditemukan.";
 }
 
-// ==========================================
-// EDIT TRANSAKSI BERDASARKAN ID
-// Format Cepat: /edit [ID] [Jenis] [Nominal] [Dompet] [Kategori] [Detail]
-// Contoh: /edit 1MSBL081126 Keluar 50000 Cash Makan Bakso
-// ==========================================
 function handleEditTransaksi_(msgText, caller) {
-  var lines = msgText.trim();
-  var parts = lines.split(" ").filter(Boolean);
-
+  var parts = msgText.trim().split(" ").filter(Boolean);
   if (parts.length < 5) {
     return "⚠️ <b>Format Edit Transaksi:</b>\n" +
-           "<code>/edit [ID] [Jenis] [Nominal] [Dompet] [Kategori] [Detail]</code>\n\n" +
-           "<b>Contoh:</b>\n" +
-           "<code>/edit 1MSBL081126 Keluar 25000 Cash Makan Nasi Padang</code>";
+      "<code>/edit [Token] [Jenis] [Nominal] [Dompet] [Kategori] [Detail]</code>\n\n" +
+      "<b>Contoh:</b>\n" +
+      "<code>/edit A7X9K Keluar 25000 Cash Makan Nasi Padang</code>";
   }
 
-  var targetId = parts[1].trim();
+  var target = parts[1].trim().toLowerCase();
   var jenisBaru = normalizeJenis_(parts[2]);
   var nominalBaru = Number(parts[3].replace(/[^0-9]/g, ''));
   var dompetBaru = parts[4].trim();
@@ -884,30 +873,52 @@ function handleEditTransaksi_(msgText, caller) {
   var isPrivileged = (callerRole === "admin" || callerRole === "superadmin");
 
   for (var i = 1; i < data.length; i++) {
-    var rowId = String(data[i][0] || "").trim();
-    var rowChatId = String(data[i][7] || "").trim();
+    var rowId = String(data[i][0] || "").trim().toLowerCase();
+    var rowToken = String(data[i][1] || "").trim().toLowerCase();
+    var rowChatId = String(data[i][8] || "").trim();
 
-    if (rowId.toLowerCase() === targetId.toLowerCase()) {
+    if (rowToken === target || rowId === target) {
       if (!isPrivileged && rowChatId !== String(caller.ChatID)) {
         return "❌ Akses ditolak. Kamu hanya bisa mengedit transaksimu sendiri.";
       }
 
-      // Kolom spreadsheet: C: Jenis (3), D: Dompet (4), E: Nominal (5), F: Kategori (6), G: Detail (7)
-      sheet.getRange(i + 1, 3).setValue(jenisBaru);
-      sheet.getRange(i + 1, 4).setValue(normalizeDompet_(dompetBaru));
-      sheet.getRange(i + 1, 5).setValue(nominalBaru);
-      sheet.getRange(i + 1, 6).setValue(kategoriBaru);
-      sheet.getRange(i + 1, 7).setValue(detailBaru);
+      // Kolom D (4): Jenis | Kolom E (5): Dompet | Kolom F (6): Nominal | Kolom G (7): Kategori | Kolom H (8): Detail
+      sheet.getRange(i + 1, 4).setValue(jenisBaru);
+      sheet.getRange(i + 1, 5).setValue(normalizeDompet_(dompetBaru));
+      sheet.getRange(i + 1, 6).setValue(nominalBaru);
+      sheet.getRange(i + 1, 7).setValue(kategoriBaru);
+      sheet.getRange(i + 1, 8).setValue(detailBaru);
 
       return "✏️ <b>Transaksi Berhasil Diperbarui!</b>\n\n" +
-             "🆔 ID: <code>" + targetId + "</code>\n" +
-             "• <b>Jenis:</b> " + jenisBaru + "\n" +
-             "• <b>Nominal:</b> Rp " + nominalBaru.toLocaleString('id-ID') + "\n" +
-             "• <b>Dompet:</b> " + normalizeDompet_(dompetBaru) + "\n" +
-             "• <b>Kategori:</b> " + kategoriBaru + "\n" +
-             "• <b>Detail:</b> " + detailBaru;
+        "🏷️ <b>Token:</b> <code>" + (data[i][1] || parts[1]).toUpperCase() + "</code>\n" +
+        "• <b>Jenis:</b> " + jenisBaru + "\n" +
+        "• <b>Nominal:</b> Rp " + nominalBaru.toLocaleString('id-ID') + "\n" +
+        "• <b>Dompet:</b> " + normalizeDompet_(dompetBaru) + "\n" +
+        "• <b>Kategori:</b> " + kategoriBaru + "\n" +
+        "• <b>Detail:</b> " + detailBaru;
     }
   }
 
-  return "⚠️ Transaksi dengan ID <code>" + targetId + "</code> tidak ditemukan.";
+  return "⚠️ Transaksi dengan token/ID <code>" + parts[1] + "</code> tidak ditemukan.";
+}
+
+// Jalankan fungsi ini sekali saja untuk mengisi token baris lama yang kosong
+function isiTokenLamaOtomatis() {
+  var ss = (typeof getSpreadsheet_ === "function") ? getSpreadsheet_() : SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Transaksi");
+  var data = sheet.getDataRange().getValues();
+  var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  for (var i = 2; i < data.length; i++) { // Mulai dari baris ke-3 (data pertama)
+    var idAda = String(data[i][0] || "").trim(); // Cek kolom A (ID)
+    var tokenKosong = String(data[i][1] || "").trim() === ""; // Cek kolom B (Token)
+
+    if (idAda && tokenKosong) {
+      var tokenBaru = "";
+      for (var k = 0; k < 5; k++) {
+        tokenBaru += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      sheet.getRange(i + 1, 2).setValue(tokenBaru); // Tulis ke Kolom B
+    }
+  }
 }

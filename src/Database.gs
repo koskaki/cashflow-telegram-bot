@@ -35,14 +35,13 @@ function normalizeDompet_(str) {
 function getDashboardRows_() {
   var sheet = getDashboardSheet_();
   if (!sheet) return [];
-  
   var raw = sheet.getDataRange().getValues();
   var out = [];
   var startRow = HEADER_ROWS.Transaksi || 2;
 
   for (var i = startRow; i < raw.length; i++) {
     var row = raw[i];
-    var valTgl = row[1];
+    var valTgl = row[2]; // Kolom C: Tanggal
     var tanggalRaw = "";
 
     if (valTgl instanceof Date) {
@@ -61,26 +60,27 @@ function getDashboardRows_() {
     var yyyy = parseInt(dp[2], 10);
     if (isNaN(dd) || isNaN(mm) || isNaN(yyyy)) continue;
 
-    var jenisRaw = String(row[2] || "").toLowerCase().trim();
-    var nominal = (typeof row[4] === 'number') 
-      ? row[4] 
-      : Number(String(row[4] || "").replace(/[^0-9]/g, '')) || 0;
+    var jenisRaw = String(row[3] || "").toLowerCase().trim(); // Kolom D: Jenis
+    var nominal = (typeof row[5] === 'number')                // Kolom F: Uang
+      ? row[5]
+      : Number(String(row[5] || "").replace(/[^0-9]/g, '')) || 0;
 
     out.push({
-      id: String(row[0] || ""),
+      id: String(row[0] || ""),             // Kolom A: ID
+      token: String(row[1] || ""),          // Kolom B: Token
       tanggalRaw: pad2_(dd) + "/" + pad2_(mm) + "/" + yyyy,
       hari: pad2_(dd),
       bulan: pad2_(mm),
       tahun: String(yyyy),
       bulanTahun: pad2_(mm) + "-" + yyyy,
       jenis: jenisRaw.indexOf("masuk") !== -1 ? "masuk" : "keluar",
-      dompet: normalizeDompet_(row[3]), // Menggunakan normalisasi kapitalisasi di sini
+      dompet: normalizeDompet_(row[4]),     // Kolom E: Dompet
       nominal: nominal,
-      kategori: String(row[5] || "-"),
-      detail: String(row[6] || "-"),
-      chatId: String(row[7] || "").trim(),
-      username: String(row[8] || "").trim(),
-      nama: String(row[9] || "").trim()
+      kategori: String(row[6] || "-"),     // Kolom G: Kategori
+      detail: String(row[7] || "-"),       // Kolom H: Detail
+      chatId: String(row[8] || "").trim(), // Kolom I: ChatID
+      username: String(row[9] || "").trim(), // Kolom J: Username
+      nama: String(row[10] || "").trim()    // Kolom K: Nama
     });
   }
   return out;
@@ -93,28 +93,41 @@ function generateCustomId_(tanggalSlash, jenis, dompet) {
   var suffix = codeJ + codeD + dp[0] + dp[1] + dp[2].substring(2);
   var rows = getDashboardRows_();
   var count = 1;
-  rows.forEach(function(r) {
+  rows.forEach(function (r) {
     if (r.id.indexOf(suffix) !== -1) count++;
   });
   return count + suffix;
 }
 
+// Generator Token 5 Karakter Acak (Huruf Besar & Angka)
+function generateTokenTransaksi_() {
+  var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  var token = "";
+  for (var i = 0; i < 5; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
 function simpanBaris_(tanggal, jenis, dompet, uang, kategori, detail, chatId, username, nama) {
   var sheet = getDashboardSheet_();
   var rows = sheet.getDataRange().getValues();
-  
-  // Normalisasi data
+
   jenis = (jenis.toLowerCase() === "masuk" || jenis.toLowerCase() === "in") ? "Masuk" : "Keluar";
   dompet = normalizeDompet_(dompet);
   var uangNum = parseInt(String(uang).replace(/[^0-9]/g, ""), 10) || 0;
-  // Bersihkan tanda @ agar selalu konsisten berupa teks username murni
-var userRef = username ? String(username).replace(/^@/, "").trim() : (nama || "User");
-  
+  var userRef = username ? String(username).replace(/^@+/, "").trim() : (nama || "User");
   var tglStr = String(tanggal);
-  var id = generateCustomId_(tglStr, jenis, dompet);
 
+  var sysId = generateCustomId_(tglStr, jenis, dompet);
+  var tokenTx = generateTokenTransaksi_();
+
+  // Urutan kolom: 
+  // [0] ID, [1] Token, [2] Tanggal, [3] Jenis, [4] Dompet, [5] Uang, 
+  // [6] Kategori, [7] Detail, [8] ChatID, [9] Username, [10] Nama
   var newRowData = [
-    id,
+    sysId,
+    tokenTx,
     tglStr,
     jenis,
     dompet,
@@ -122,15 +135,16 @@ var userRef = username ? String(username).replace(/^@/, "").trim() : (nama || "U
     kategori || "Umum",
     detail || "-",
     String(chatId),
-    userRef
+    userRef,
+    nama || "-"
   ];
 
-  // Cari baris kosong pertama setelah header (kolom A kosong)
+  // Cari baris kosong di tengah sebelum appendRow
   var targetRow = -1;
   var startRow = HEADER_ROWS.Transaksi || 2;
   for (var i = startRow; i < rows.length; i++) {
     if (!rows[i][0] || String(rows[i][0]).trim() === "") {
-      targetRow = i + 1; // 1-indexed di Google Sheets
+      targetRow = i + 1;
       break;
     }
   }
@@ -142,10 +156,11 @@ var userRef = username ? String(username).replace(/^@/, "").trim() : (nama || "U
     targetRow = sheet.getLastRow();
   }
 
-  // Format kolom nominal (Kolom E) menjadi format mata uang
-  sheet.getRange(targetRow, 5).setNumberFormat('"Rp"#,##0');
+  // Format rupiah di Kolom F (kolom ke-6)
+  sheet.getRange(targetRow, 6).setNumberFormat('"Rp"#,##0');
 
-  return id;
+  // Kembalikan ID sistem dan Token
+  return { id: sysId, token: tokenTx };
 }
 
 function resolveUser_(chatId, username, nama) {
@@ -157,7 +172,7 @@ function resolveUser_(chatId, username, nama) {
   for (var i = HEADER_ROWS.Users; i < rows.length; i++) {
     var uRow = normalizeUsername_(rows[i][0]);
     var cRow = String(rows[i][1] || "").trim();
-    
+
     // Cocokkan ChatID terlebih dahulu
     if (cRow && cRow === String(chatId)) {
       return {
@@ -215,8 +230,8 @@ function handleTambahUser_(msgText, caller) {
   var parts = msgText.split(" ").filter(Boolean);
   if (parts.length < 3) {
     return "⚠️ Format salah.\n" +
-           "• Format: <code>/tambahuser [id/username] [role] [nama_lengkap]</code>\n" +
-           "• Contoh: <code>/tambahuser 1020532606 user Irfani Putri</code>";
+      "• Format: <code>/tambahuser [id/username] [role] [nama_lengkap]</code>\n" +
+      "• Contoh: <code>/tambahuser 1020532606 user Irfani Putri</code>";
   }
 
   var targetInput = parts[1].trim();
@@ -240,7 +255,7 @@ function handleTambahUser_(msgText, caller) {
     var sheetUrl = props.getProperty("SPREADSHEET_URL");
     ss = sheetUrl ? SpreadsheetApp.openByUrl(sheetUrl) : SpreadsheetApp.getActiveSpreadsheet();
   }
-  
+
   var sheet = ss.getSheetByName("Users");
   if (!sheet) return "❌ Sheet 'Users' tidak ditemukan di Spreadsheet.";
 
@@ -273,8 +288,8 @@ function handleTambahUser_(msgText, caller) {
 
   if (targetChatId) {
     try {
-      sendMessage(targetChatId, "🎉 <b>Selamat!</b> Akunmu telah disetujui sebagai <b>" + newRole + "</b>. Silakan ketik /menu untuk mulai.");
-    } catch (e) {}
+      sendMessage(targetChatId, "🎉 <b>Yeay!</b> Akunmu telah disetujui sebagai <b>" + newRole + "</b>. Silakan ketik /menu untuk mulai.");
+    } catch (e) { }
   }
 
   return "✅ Pengguna <b>" + dispNameCol + "</b> berhasil didaftarkan sebagai <b>" + newRole + "</b>.";
@@ -376,7 +391,7 @@ function getRekapPeriodeEvaluasi_(chatId, periode) {
     var tglTarget = Utilities.formatDate(dKemarin, "GMT+7", "dd/MM/yyyy");
     labelPeriode = "Kemarin (" + tglTarget + ")";
 
-    rows.forEach(function(r) {
+    rows.forEach(function (r) {
       if (String(r.chatId) === String(chatId) && r.tanggalRaw === tglTarget) {
         if (r.jenis === "masuk") totalMasuk += r.nominal;
         if (r.jenis === "keluar") {
@@ -391,7 +406,7 @@ function getRekapPeriodeEvaluasi_(chatId, periode) {
     // Menghitung Senin - Minggu pada pekan lalu
     var dayOfWeek = now.getDay(); // 0: Minggu, 1: Senin, dst.
     var distanceToMon = (dayOfWeek === 0) ? 6 : (dayOfWeek - 1);
-    
+
     var startLastWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMon - 7);
     var endLastWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMon - 1);
 
@@ -399,7 +414,7 @@ function getRekapPeriodeEvaluasi_(chatId, periode) {
     var endStr = Utilities.formatDate(endLastWeek, "GMT+7", "dd/MM/yyyy");
     labelPeriode = "Minggu Lalu (" + startStr + " s/d " + endStr + ")";
 
-    rows.forEach(function(r) {
+    rows.forEach(function (r) {
       if (String(r.chatId) === String(chatId)) {
         var dp = r.tanggalRaw.split("/");
         var rowDate = new Date(parseInt(dp[2], 10), parseInt(dp[1], 10) - 1, parseInt(dp[0], 10));
@@ -422,7 +437,7 @@ function getRekapPeriodeEvaluasi_(chatId, periode) {
     var targetBulanTahun = targetBulan + "-" + targetTahun;
     labelPeriode = "Bulan Lalu (" + targetBulanTahun + ")";
 
-    rows.forEach(function(r) {
+    rows.forEach(function (r) {
       if (String(r.chatId) === String(chatId) && r.bulanTahun === targetBulanTahun) {
         if (r.jenis === "masuk") totalMasuk += r.nominal;
         if (r.jenis === "keluar") {
@@ -434,9 +449,9 @@ function getRekapPeriodeEvaluasi_(chatId, periode) {
     });
   }
 
-  var katSorted = Object.keys(kategoriKeluar).map(function(k) {
+  var katSorted = Object.keys(kategoriKeluar).map(function (k) {
     return { nama: k, total: kategoriKeluar[k] };
-  }).sort(function(a, b) {
+  }).sort(function (a, b) {
     return b.total - a.total;
   });
 

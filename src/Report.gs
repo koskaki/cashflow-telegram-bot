@@ -195,12 +195,16 @@ function formatOutputLaporan_(judulPeriode, caller, rows, isDetail, isGlobal) {
       var dot = isMasuk ? "🟢" : "🔴";
       var judulItem = (r.detail && r.detail !== "-") ? r.detail : (r.kategori || "Transaksi");
       if (judulItem.length > 20) judulItem = judulItem.substring(0, 18) + "..";
-
       var nomStr = "Rp " + Number(r.nominal).toLocaleString('id-ID');
       var tagUser = isGlobal ? " • " + (r.nama || "User") : "";
+      
+      // Ambil token transaksi (fallback ke ID jika baris lama belum punya token)
+      var kodeTx = r.token || r.id;
 
-      listDetail.push(dot + " <b>" + judulItem + "</b>: " + nomStr + "\n" +
-                      "   <i>" + tglShort + " • " + dNama + " • " + (r.kategori || "Umum") + tagUser + "</i>");
+      listDetail.push(
+        dot + " <b>" + judulItem + "</b>: " + nomStr + "\n" +
+        "   └ 🏷️ <code>" + kodeTx + "</code> • <i>" + tglShort + " • " + dNama + " • " + (r.kategori || "Umum") + tagUser + "</i>"
+      );
     }
   });
 
@@ -403,7 +407,10 @@ function handleLaporanKhusus_(msgText, caller, isDetail) {
 
   var body = "";
   if (isDetail) {
-    body = listDetail.join("\n") + "\n\n";
+    body = listDetail.join("\n\n") + "\n" + garis + "\n" +
+           "💡 <i>Salin token di atas lalu ketik:</i>\n" +
+           "• <code>/hapus &lt;Token&gt;</code> untuk menghapus\n" +
+           "• <code>/edit &lt;Token&gt; ...</code> untuk mengubah\n" + garis + "\n";
   } else {
     var garis = "──────────────────────────────";
     body = "<pre>";
